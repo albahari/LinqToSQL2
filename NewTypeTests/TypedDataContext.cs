@@ -20,7 +20,7 @@ namespace NewTypeTests
 		}
 
 		public TypedDataContext ()
-			: base ("Data Source=.;Integrated Security=SSPI;Initial Catalog=L2SNewTypeTests", _mapping)
+			: base ("Data Source=.;Integrated Security=SSPI;Initial Catalog=L2SNewTypeTests;TrustServerCertificate=true", _mapping)
 		{
 		}
 	}

@@ -199,7 +199,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			{
 				throw Error.BadParameterType(sqlType.GetClosestRuntimeType());
 			}
-			System.Data.SqlClient.SqlParameter sParameter = parameter as System.Data.SqlClient.SqlParameter;
+			var sParameter = parameter as Microsoft.Data.SqlClient.SqlParameter;
 			if(sParameter != null)
 			{
 				sParameter.SqlDbType = sqlType.SqlDbType;

@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Linq.Mapping;
 using System.Data.Linq;
-using System.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Data.SqlClient;
 
 namespace System.Data.Linq.Provider.Common
 {

@@ -1,0 +1,4 @@
+﻿See https://github.com/dotnet/SqlClient/blob/main/porting-cheat-sheet.md
+
+TODO:
+	Check that change in use of DateTime object as value for SqlParameter doesn't break anything.

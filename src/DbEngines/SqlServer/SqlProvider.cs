@@ -21,10 +21,10 @@ using System.Runtime.CompilerServices;
 
 namespace System.Data.Linq.DbEngines.SqlServer
 {
+	using Microsoft.Data.SqlClient;
 	using System.Data.Linq.Provider.Common;
 	using System.Data.Linq.Provider.Interfaces;
 	using System.Data.Linq.Provider.NodeTypes;
-	using System.Data.SqlClient;
 
 
 	[SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling", Justification = "Unknown reason.")]
@@ -798,7 +798,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					{
 						scale = (int)Convert.ChangeType(piScale.GetValue(p, null), typeof(int), CultureInfo.InvariantCulture);
 					}
-					var sp = p as System.Data.SqlClient.SqlParameter;
+					var sp = p as Microsoft.Data.SqlClient.SqlParameter;
 					writer.WriteLine("-- {0}: {1} {2} (Size = {3}; Prec = {4}; Scale = {5}) [{6}]",
 						p.ParameterName,
 						p.Direction,
