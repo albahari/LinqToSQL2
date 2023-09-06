@@ -24,7 +24,6 @@ namespace System.Data.Linq.DbEngines.SqlServer
 	using System.Data.Linq.Provider.Common;
 	using System.Data.Linq.Provider.Interfaces;
 	using System.Data.Linq.Provider.NodeTypes;
-	using System.Data.SqlClient;
 
 
 	[SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling", Justification = "Unknown reason.")]
@@ -32,7 +31,6 @@ namespace System.Data.Linq.DbEngines.SqlServer
 	{
 		// [JA] added hooks
 		public static Action<IDbCommand> CommandExecuting;   // [JA] for better logging
-		public static Func<string, DbProviderFactory> ProviderFactoryFetcher = name => SqlClientFactory.Instance;    // [JA] for SQL CE support
 		public static Action<DbConnection> OpenConnection = cx => cx.Open ();    // [JA] to allow automatic recovery after invalid MFA token
 
 #warning REFACTORING CANDIDATE FOR #23
@@ -55,6 +53,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 		private bool _enableCacheLookup = true;
 		private SqlServerProviderMode _mode;
 		private bool _deleted;
+		private SqlLibrary _sqlLibrary;
 		#endregion
 
 		#region Constants
@@ -62,6 +61,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 		const string SqlCeDataReaderTypeName = "System.Data.SqlServerCe.SqlCeDataReader";
 		const string SqlCeConnectionTypeName = "System.Data.SqlServerCe.SqlCeConnection";
 		const string SqlCeTransactionTypeName = "System.Data.SqlServerCe.SqlCeTransaction";
+		const string SqlCeProviderFactoryTypeName = "System.Data.SqlServerCe.SqlCeProviderFactory";
 		#endregion
 
 		public SqlProvider()
@@ -112,8 +112,10 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				}
 				if(_mode == SqlServerProviderMode.SqlCE)
 				{
-					DbProviderFactory factory = SqlProvider.GetProvider(SqlCeProviderInvariantName);
-					if(factory == null)
+					// DbProviderFactory factory = SqlProvider.GetProvider(SqlCeProviderInvariantName);
+					_sqlLibrary = CeSqlLibrary.Instance;
+					DbProviderFactory factory = _sqlLibrary.DbProviderFactory;
+					if (factory == null)
 					{
 						throw Error.ProviderNotInstalled(_dbName, SqlCeProviderInvariantName);
 					}
@@ -121,14 +123,15 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				}
 				else
 				{
-					con = new SqlConnection();
+					_sqlLibrary = SqlLibrary.PreferredInstance;
+					con = _sqlLibrary.CreateConnection();
 				}
 				con.ConnectionString = connectionString;
 			}
 			else
 			{
 				// We only support SqlTransaction and SqlCeTransaction
-				tx = connection as SqlTransaction;
+				tx = connection as System.Data.SqlClient.SqlTransaction;
 				if(tx == null)
 				{
 					// See if it's a SqlCeTransaction
@@ -146,15 +149,23 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				{
 					throw Error.InvalidConnectionArgument("connection");
 				}
+
 				if(con.GetType().FullName == SqlCeConnectionTypeName)
 				{
 					_mode = SqlServerProviderMode.SqlCE;
+
+					// If we have a connection, we can configure the CE provider factory ourselves
+					if (CeSqlLibrary.Instance.DbProviderFactory == null)
+						CeSqlLibrary.Configure((DbProviderFactory)Activator.CreateInstance(con.GetType().Assembly.GetType(SqlCeProviderFactoryTypeName)));
 				}
 				_dbName = this.GetDatabaseName(con.ConnectionString);
+
+				_sqlLibrary = SqlLibrary.FromConnection(con);
+				if (_sqlLibrary == null) throw new InvalidOperationException($"Unrecognized connection type {con.GetType().FullName}");
 			}
 
 			// initialize to the default command timeout
-			using(DbCommand c = con.CreateCommand())
+			using (DbCommand c = con.CreateCommand())
 			{
 				_commandTimeout = c.CommandTimeout;
 			}
@@ -183,36 +194,9 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			SqlNode.Formatter = new SqlFormatter();
 #endif
 
-
-			Type readerType;
-			if(_mode == SqlServerProviderMode.SqlCE)
-			{
-				readerType = con.GetType().Module.GetType(SqlCeDataReaderTypeName);
-			}
-			else if(con is SqlConnection)
-			{
-				readerType = typeof(SqlDataReader);
-			}
-			else
-			{
-				readerType = typeof(DbDataReader);
-			}
+			Type readerType = _sqlLibrary.GetDataReaderType() ?? typeof(DbDataReader);
+			
 			_readerCompiler = new ObjectReaderCompiler(readerType, _services);
-		}
-
-		private static DbProviderFactory GetProvider(string providerName)
-		{
-#warning [JA] Temporary fix. We need to support SQL CE as well.
-			return ProviderFactoryFetcher(providerName);
-			//bool hasProvider =
-			//	DbProviderFactories.GetFactoryClasses().Rows.OfType<DataRow>()
-			//	.Select(r => (string)r["InvariantName"])
-			//	.Contains(providerName, StringComparer.OrdinalIgnoreCase);
-			//if(hasProvider)
-			//{
-			//	return DbProviderFactories.GetFactory(providerName);
-			//}
-			//return null;
 		}
 
 		#region Dispose\Finalize
@@ -524,10 +508,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			finally
 			{
 				_conManager.ReleaseConnection(this);
-				if(_conManager.Connection is SqlConnection)
-				{
-					SqlConnection.ClearAllPools();
-				}
+				_sqlLibrary.ClearAllPools();
 			}
 		}
 
@@ -558,10 +539,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				try
 				{
 					con.ChangeDatabase("master");
-					if(con is SqlConnection)
-					{
-						SqlConnection.ClearAllPools();
-					}
+					_sqlLibrary.ClearAllPools();
 					if(_log != null)
 					{
 						_log.WriteLine(Strings.LogAttemptingToDeleteDatabase(_dbName));
@@ -798,15 +776,8 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					{
 						scale = (int)Convert.ChangeType(piScale.GetValue(p, null), typeof(int), CultureInfo.InvariantCulture);
 					}
-					var sp = p as System.Data.SqlClient.SqlParameter;
-					writer.WriteLine("-- {0}: {1} {2} (Size = {3}; Prec = {4}; Scale = {5}) [{6}]",
-						p.ParameterName,
-						p.Direction,
-						sp == null ? p.DbType.ToString() : sp.SqlDbType.ToString(),
-						p.Size.ToString(System.Globalization.CultureInfo.CurrentCulture),
-						prec,
-						scale,
-						sp == null ? p.Value : sp.SqlValue);
+					//var sp = p as System.Data.SqlClient.SqlParameter;
+					_sqlLibrary.WriteSqlParameter(writer, p, prec, scale);
 				}
 #warning [FB] IMPLEMENT FILE VERSION RETRIEVAL HERE AND REPLACE "1.0"
 				writer.WriteLine("-- Context: {0}({1}) Model: {2} Build: {3}", this.GetType().Name, this.Mode, _services.Model.GetType().Name, "1.0 (placeholder)");

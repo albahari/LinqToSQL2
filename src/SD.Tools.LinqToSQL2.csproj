@@ -4,8 +4,9 @@
     <AssemblyName>SD.Tools.LinqToSQL2</AssemblyName>
     <RootNamespace>System.Data.Linq</RootNamespace>
     <Version>1.0</Version>
+	<LangVersion>11.0</LangVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+	<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Authors>Solutions Design bv, LINQPad</Authors>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageLicenseUrl></PackageLicenseUrl>
@@ -38,4 +39,8 @@
     <PackageReference Include="System.Reflection.Emit.ILGeneration" Version="4.6.0" />
     <PackageReference Include="System.Reflection.Emit.Lightweight" Version="4.6.0" />
   </ItemGroup>
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net6.0'">
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.1" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.55.0" />
+  </ItemGroup>	
 </Project>

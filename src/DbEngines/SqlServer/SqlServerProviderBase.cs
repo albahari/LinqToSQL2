@@ -199,37 +199,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			{
 				throw Error.BadParameterType(sqlType.GetClosestRuntimeType());
 			}
-			System.Data.SqlClient.SqlParameter sParameter = parameter as System.Data.SqlClient.SqlParameter;
-			if(sParameter != null)
-			{
-				sParameter.SqlDbType = sqlType.SqlDbType;
-				if(sqlType.HasPrecisionAndScale)
-				{
-					sParameter.Precision = (byte)sqlType.Precision;
-					sParameter.Scale = (byte)sqlType.Scale;
-				}
-			}
-			else
-			{
-				PropertyInfo piSqlDbType = parameter.GetType().GetProperty("SqlDbType");
-				if(piSqlDbType != null)
-				{
-					piSqlDbType.SetValue(parameter, sqlType.SqlDbType, null);
-				}
-				if(sqlType.HasPrecisionAndScale)
-				{
-					PropertyInfo piPrecision = parameter.GetType().GetProperty("Precision");
-					if(piPrecision != null)
-					{
-						piPrecision.SetValue(parameter, Convert.ChangeType(sqlType.Precision, piPrecision.PropertyType, CultureInfo.InvariantCulture), null);
-					}
-					PropertyInfo piScale = parameter.GetType().GetProperty("Scale");
-					if(piScale != null)
-					{
-						piScale.SetValue(parameter, Convert.ChangeType(sqlType.Scale, piScale.PropertyType, CultureInfo.InvariantCulture), null);
-					}
-				}
-			}
+			SqlLibrary.PopulateDbParameter (parameter, sqlType);
 			parameter.Value = GetParameterValue(sqlType, value);
 
 			int? determinedSize = DetermineParameterSize(sqlType, parameter);
