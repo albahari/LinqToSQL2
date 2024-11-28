@@ -130,16 +130,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			}
 			else
 			{
-				// We only support SqlTransaction and SqlCeTransaction
-				tx = connection as System.Data.SqlClient.SqlTransaction;
-				if(tx == null)
-				{
-					// See if it's a SqlCeTransaction
-					if(connection.GetType().FullName == SqlCeTransactionTypeName)
-					{
-						tx = connection as DbTransaction;
-					}
-				}
+				tx = connection as DbTransaction;				
 				if(tx != null)
 				{
 					connection = tx.Connection;

@@ -82,7 +82,11 @@ namespace System.Data.Linq.DbEngines.SqlServer
 		//DbCommandBuilder _dbCommandBuilder;
 		//public DbCommandBuilder GetDbCommandBuilder() => _dbCommandBuilder ??= DbProviderFactory.CreateCommandBuilder();
 
-		//public virtual string QuoteIdentifier (string unquotedIdentifier) => GetDbCommandBuilder().QuoteIdentifier (unquotedIdentifier);
+		public static string QuoteIdentifier (string unquotedIdentifier)
+		{
+			if (string.IsNullOrEmpty(unquotedIdentifier)) return unquotedIdentifier;
+			return "[" + unquotedIdentifier + "]";
+        }
 	}
 
 	class CeSqlLibrary : SqlLibrary
@@ -106,7 +110,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 
 namespace System.Data.Linq.DbEngines.SqlServer
 {
-	using System.Data.SqlClient;
+    using System.Data.SqlClient;
 
 	class SystemSqlLibrary : SqlLibrary
 	{
@@ -146,7 +150,6 @@ namespace System.Data.Linq.DbEngines.SqlServer
 	}
 }
 
-#if NET6_0_OR_GREATER
 namespace System.Data.Linq.DbEngines.SqlServer
 {
 	using Microsoft.Data.SqlClient;
@@ -188,18 +191,3 @@ namespace System.Data.Linq.DbEngines.SqlServer
 		}
 	}
 }
-#else
-namespace System.Data.Linq.DbEngines.SqlServer
-{
-	class MicrosoftSqlLibrary : SqlLibrary
-	{
-		public static readonly MicrosoftSqlLibrary Instance = null;
-
-		public override DbProviderFactory DbProviderFactory => throw new NotSupportedException();
-
-		public override void ClearAllPools() => throw new NotSupportedException();
-
-		internal override Type GetDataReaderType () => throw new NotSupportedException();
-	}
-}
-#endif

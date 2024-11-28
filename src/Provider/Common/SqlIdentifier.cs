@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Linq.Mapping;
 using System.Data.Linq;
-using System.Data.SqlClient;
+//using System.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Data.Linq.DbEngines.SqlServer;
 
 namespace System.Data.Linq.Provider.Common
 {
@@ -27,7 +28,7 @@ namespace System.Data.Linq.Provider.Common
 	internal static class SqlIdentifier
 	{
 #warning Refactor into not using SqlCommandBuilder, as it's solely used to quote identifiers with '[]' using a very inefficient system. This code now blocks porting to netstandard2.0
-		private static SqlCommandBuilder builder = new SqlCommandBuilder();
+		//private static SqlCommandBuilder builder = new SqlCommandBuilder();
 
 		const string ParameterPrefix = "@";
 		const string QuotePrefix = "[";
@@ -79,13 +80,13 @@ namespace System.Data.Linq.Provider.Common
 				int splitPosition = s.IndexOf(SchemaSeparatorChar);
 				if(splitPosition < 0)
 				{ //no . in the string
-					return builder.QuoteIdentifier(s);
+					return SqlLibrary.QuoteIdentifier(s);
 				}
 				string left = s.Substring(0, splitPosition);
 				string right = s.Substring(splitPosition + 1, s.Length - splitPosition - 1);
 				if(!IsQuoted(right))
 				{
-					right = builder.QuoteIdentifier(right);
+					right = SqlLibrary.QuoteIdentifier(right);
 				}
 				return String.Concat(QuoteCompoundIdentifier(left), SchemaSeparatorChar + right);
 			}
@@ -95,12 +96,12 @@ namespace System.Data.Linq.Provider.Common
 				int splitPosition = s.LastIndexOf(SchemaSeparatorChar);
 				if(splitPosition < 0)
 				{ //no . in the string
-					return builder.QuoteIdentifier(s);
+					return SqlLibrary.QuoteIdentifier(s);
 				}
 				string left = s.Substring(0, splitPosition);
 				if(!IsQuoted(left))
 				{
-					left = builder.QuoteIdentifier(left);
+					left = SqlLibrary.QuoteIdentifier(left);
 				}
 				string right = s.Substring(splitPosition + 1, s.Length - splitPosition - 1);
 				return String.Concat(left + SchemaSeparatorChar, QuoteCompoundIdentifier(right));
@@ -111,7 +112,7 @@ namespace System.Data.Linq.Provider.Common
 				if(splitPosition < 0)
 				{ //no . in the string
 					//A => [A]
-					return builder.QuoteIdentifier(s);
+					return SqlLibrary.QuoteIdentifier(s);
 				}
 				string left = s.Substring(0, splitPosition);
 				string right = s.Substring(splitPosition + 1, s.Length - splitPosition - 1);
@@ -139,7 +140,7 @@ namespace System.Data.Linq.Provider.Common
 			}
 			else
 			{
-				return builder.QuoteIdentifier(s);
+				return SqlLibrary.QuoteIdentifier(s);
 			}
 		}
 
