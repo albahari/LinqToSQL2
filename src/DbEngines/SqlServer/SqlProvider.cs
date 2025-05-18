@@ -1035,6 +1035,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				cmd.CommandTimeout = _commandTimeout;
 				AssignParameters(cmd, queryInfo.Parameters, userArgs, lastResult);
 				LogCommand(_log, cmd);
+
 				_queryCount += 1;
 
 				switch(queryInfo.ResultShape)
@@ -1324,11 +1325,11 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			}
 			SqlNode node = converter.ConvertOuter(query);
 
-			return this.BuildQuery(this.GetResultShape(query), this.GetResultType(query), node, null, annotations);
+			return this.BuildQuery(this.GetResultShape(query), this.GetResultType(query), node, null, annotations, converter.QueryHints);
 		}
 
 		[SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling", Justification = "These issues are related to our use of if-then and case statements for node types, which adds to the complexity count however when reviewed they are easy to navigate and understand.")]
-		private QueryInfo[] BuildQuery(ResultShape resultShape, Type resultType, SqlNode node, ReadOnlyCollection<System.Data.Linq.Provider.NodeTypes.SqlParameter> parentParameters, SqlNodeAnnotations annotations)
+		private QueryInfo[] BuildQuery(ResultShape resultShape, Type resultType, SqlNode node, ReadOnlyCollection<System.Data.Linq.Provider.NodeTypes.SqlParameter> parentParameters, SqlNodeAnnotations annotations, IList<string> queryHints = null)
 		{
 			System.Diagnostics.Debug.Assert(resultType != null);
 			System.Diagnostics.Debug.Assert(node != null);
@@ -1519,6 +1520,11 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				// build only one result
 				ReadOnlyCollection<SqlParameterInfo> parameters = parameterizer.Parameterize(node);
 				string commandText = formatter.Format(node);
+				
+				// Gather any query hints and combine into an OPTION () clause.
+				if (queryHints != null && queryHints.Any())
+					commandText += "\r\nOPTION (" + string.Join (", ", queryHints.Distinct (StringComparer.OrdinalIgnoreCase)) + ")";
+
 				return new QueryInfo[] {
                     new QueryInfo(node, commandText, parameters, resultShape, resultType)
                     };

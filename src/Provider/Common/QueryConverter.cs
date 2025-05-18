@@ -33,6 +33,9 @@ namespace System.Data.Linq.Provider.Common
 		private Expression _dominatingExpression;
 		private bool _allowDeferred;
 		private ConverterStrategy _converterStrategy = ConverterStrategy.Default;
+
+		// For query hints applied via LinqToSqlExtensions.WithQueryHints
+		public readonly List<string> QueryHints = new();
 		#endregion
 
 		#region Private classes
@@ -2140,6 +2143,14 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 			Type declType = mc.Method.DeclaringType;
 			if(mc.Method.IsStatic)
 			{
+				// Strip any calls to LinqToSqlExtensions.WithQueryHints, collecting the hints into the QueryHints list.
+				if (mc.Method.DeclaringType == typeof(LinqToSqlExtensions) && mc.Method.Name == nameof(LinqToSqlExtensions.WithQueryHints))
+				{
+					var hints = (mc.Arguments[1] as ConstantExpression)?.Value as string[];
+					if (hints != null) hints = hints.Where(h => !string.IsNullOrWhiteSpace(h)).ToArray();
+					if (hints != null && hints.Any()) QueryHints.AddRange (hints);
+					return Visit (mc.Arguments[0]);
+				}
 				if(this.IsSequenceOperatorCall(mc))
 				{
 					return this.VisitSequenceOperatorCall(mc);
