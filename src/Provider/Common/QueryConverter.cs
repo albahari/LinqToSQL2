@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Collections;
 using System.Collections.Generic;
@@ -2180,6 +2180,20 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 						return sn;
 					}
 				}
+
+				// NEW: Handle MemoryExtensions.Contains(ReadOnlySpan<T>, T) and MemoryExtensions.Contains(Span<T>, T)
+				if (mc.Method.Name == "Contains"
+					&& mc.Method.DeclaringType == typeof(MemoryExtensions)
+					&& mc.Arguments.Count == 2
+					&& IsSpanLike(mc.Arguments[0].Type))
+				{
+					Expression seq = TryUnwrapSpanSource(mc.Arguments[0]);
+					if (seq != null)
+					{
+						return this.VisitContains(seq, mc.Arguments[1]);
+					}
+					// Fall through to default if we cannot unwrap
+				}
 			}
 			else if(typeof(DataContext).IsAssignableFrom(mc.Method.DeclaringType))
 			{
@@ -2224,6 +2238,22 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 				)
 			{
 				return this.VisitContains(mc.Object, mc.Arguments[0]);
+			}
+			// NEW: Handle ReadOnlySpan<T>.Contains / Span<T>.Contains (after implicit conversions like ReadOnlySpan<T>.op_Implicit(array))
+			else if (
+				mc.Method.Name == "Contains"
+				&& !mc.Method.IsStatic
+				&& IsSpanLike(mc.Method.DeclaringType)
+				&& mc.Type == typeof(bool)
+				&& mc.Arguments.Count == 1
+			)
+			{
+				Expression seq = TryUnwrapSpanSource(mc.Object);
+				if (seq != null)
+				{
+					return this.VisitContains(seq, mc.Arguments[0]);
+				}
+				// Fall through to default if we cannot unwrap
 			}
 
 			// default: create sql method call node instead
@@ -3138,5 +3168,53 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 			set { _converterStrategy = value; }
 		}
 		#endregion
+
+		private static bool IsSpanLike(Type t)
+		{
+			if(t == null) return false;
+			if(t.IsGenericType)
+			{
+				Type def = t.GetGenericTypeDefinition();
+				if(def == typeof(ReadOnlySpan<>) || def == typeof(Span<>))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static Expression TryUnwrapSpanSource(Expression expr)
+		{
+			// Strip conversions first
+			while(expr is UnaryExpression u &&
+				  (u.NodeType == ExpressionType.Convert || u.NodeType == ExpressionType.ConvertChecked))
+			{
+				expr = u.Operand;
+			}
+
+			if(expr is MethodCallExpression mce)
+			{
+				// Pattern: ReadOnlySpan<T>.op_Implicit(array) or Span<T>.op_Implicit(array)
+				if(mce.Method.IsStatic &&
+				   mce.Method.IsSpecialName &&
+				   mce.Method.Name == "op_Implicit" &&
+				   mce.Arguments.Count == 1 &&
+				   IsSpanLike(mce.Method.DeclaringType))
+				{
+					return mce.Arguments[0];
+				}
+
+				// Pattern: MemoryExtensions.AsSpan(array)
+				if(mce.Method.IsStatic &&
+				   mce.Method.DeclaringType == typeof(MemoryExtensions) &&
+				   mce.Method.Name == "AsSpan" &&
+				   mce.Arguments.Count == 1)
+				{
+					return mce.Arguments[0];
+				}
+			}
+
+			return null;
+		}
 	}
 }

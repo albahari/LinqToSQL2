@@ -1,7 +1,7 @@
 using Xunit;
+using System;
 using System.Linq;
 using System.Data.Linq;
-using System;
 
 [assembly: CollectionBehavior (DisableTestParallelization = true)]
 
@@ -169,6 +169,16 @@ namespace NewTypeTests
                .Where (d => d.DateOnly!.Value.DayOfYear == TestDate.DayOfYear)
                .ToArray ();
             Assert.Single (matches);
-        }     
-    }
+        }
+
+		[Fact]
+		public void CanUseSpanContains ()
+		{
+            var keys = new[] { 1, 1000 };
+			var matches = Data.DateTimeTests
+			   .Where(d => keys.Contains (d.ID))
+			   .ToArray();
+			Assert.Single(matches);
+		}
+	}
 }
