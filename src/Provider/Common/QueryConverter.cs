@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Collections;
 using System.Collections.Generic;
@@ -2184,7 +2184,15 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 				// NEW: Handle MemoryExtensions.Contains(ReadOnlySpan<T>, T) and MemoryExtensions.Contains(Span<T>, T)
 				if (mc.Method.Name == "Contains"
 					&& mc.Method.DeclaringType == typeof(MemoryExtensions)
-					&& mc.Arguments.Count == 2
+					&& (
+                        // DateTimeTests.Where (p => numbers.Contains (p.ID)) binds to
+						// MemoryExtensions.Contains(ReadOnlySpan<T>, T)
+                        mc.Arguments.Count == 2 ||
+
+                        // DateTimeTests.Where (p => _weekendDays.Contains (p.DateAndTime.Value.DayOfWeek)) binds to
+                        // MemoryExtensions.Contains(ReadOnlySpan<T>, T, IEqualityComparer<T> = null)
+                        mc.Arguments.Count == 3 && mc.Arguments[2] is ConstantExpression ce && ce.Value == null
+					)
 					&& IsSpanLike(mc.Arguments[0].Type))
 				{
 					Expression seq = TryUnwrapSpanSource(mc.Arguments[0]);

@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 using System;
 using System.Linq;
 using System.Data.Linq;
@@ -180,5 +180,16 @@ namespace NewTypeTests
 			   .ToArray();
 			Assert.Single(matches);
 		}
-	}
+
+        [Fact]
+        public void CanUseSpanContainsWithDoW()
+        {
+            var days = new[] { DayOfWeek.Thursday, DayOfWeek.Friday};
+            var matches = Data.DateTimeTests
+               .Where(d => days.Contains(d.DateAndTime.Value.DayOfWeek))
+               .ToArray();
+            Assert.Single(matches);
+        }
+
+    }
 }
