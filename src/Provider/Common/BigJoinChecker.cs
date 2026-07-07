@@ -62,5 +62,36 @@ namespace System.Data.Linq.Provider.Common
 			return v.canBigJoin;
 		}
 
+		/// <summary>
+		/// A big join reads 'count' consecutive rows per outer row, which is only correct when the final
+		/// rowset is ordered such that each outer row's joined rows are contiguous. That ordering is
+		/// created later (by OrderByLifter, from SqlSelect.OrderingType.Always) out of the identity
+		/// members (primary keys) of the tables in the outer select's FROM clause. If any source lacks
+		/// identity members - views, PK-less tables, table-valued functions - no such ordering can be
+		/// produced, and the big join would silently associate rows with the wrong parents.
+		/// </summary>
+		internal static bool CanProvideDefaultOrdering(SqlNode node)
+		{
+			switch(node)
+			{
+				case null:
+					// a FROM-less select produces a single row, so cannot compromise contiguity
+					return true;
+				case SqlTable table:
+					return table.RowType.IdentityMembers.Count > 0;
+				case SqlTableValuedFunctionCall tvf:
+					return tvf.RowType.IdentityMembers.Count > 0;
+				case SqlAlias alias:
+					return CanProvideDefaultOrdering(alias.Node);
+				case SqlJoin join:
+					return CanProvideDefaultOrdering(join.Left) && CanProvideDefaultOrdering(join.Right);
+				case SqlSelect select:
+					// ordering cannot be lifted through GROUP BY or DISTINCT
+					return select.GroupBy.Count == 0 && !select.IsDistinct && CanProvideDefaultOrdering(select.From);
+				default:
+					// unions, user queries (raw SQL), etc. provide no liftable ordering
+					return false;
+			}
+		}
 	}
 }

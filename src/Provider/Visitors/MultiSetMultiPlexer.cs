@@ -34,7 +34,8 @@ namespace System.Data.Linq.Provider.Visitors
 			if((this.options & SqlMultiplexerOptionType.EnableBigJoin) != 0 &&
 			   !this.hasBigJoin && this.canJoin && this.isTopLevel && this.outerSelect != null
 			   && !MultisetChecker.HasMultiset(sms.Select.Selection)
-			   && BigJoinChecker.CanBigJoin(sms.Select))
+			   && BigJoinChecker.CanBigJoin(sms.Select)
+			   && BigJoinChecker.CanProvideDefaultOrdering(this.outerSelect.From))
 			{
 
 				sms.Select = this.VisitSelect(sms.Select);
