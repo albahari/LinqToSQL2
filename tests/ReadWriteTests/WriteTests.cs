@@ -8,11 +8,9 @@ using NUnit.Framework;
 
 using System.Data.Linq;
 using System.Data.Linq.Mapping;
-using System.Data.Common;
+using System.Data.SqlClient;
 
 using System.Collections.Generic;
-using SD.Tools.OrmProfiler.Interceptor;
-using System.Configuration;
 using WriteTests;
 using WriteTests.EntityClasses;
 
@@ -27,13 +25,17 @@ namespace ReadWriteTests.SqlServer
 		private MappingSource _mappingSourceFromXmlFile;
 
 
-		[TestFixtureSetUp]
+		[OneTimeSetUp]
 		public void Init()
 		{
+			if(!TestConfig.CanConnect(TestConfig.WriteTests))
+			{
+				Assert.Ignore("Cannot connect to the LLBLGenProUnitTest write-test database. " +
+					"Create it from the DDL under tests/SourceProjects and set L2S_WRITETESTS_CONN to point at it.");
+			}
 			// give testrunID
 			_testRunID = Guid.NewGuid();
 			Console.WriteLine("TestRunID: {0}", _testRunID.ToString());
-			InterceptorCore.Initialize("Write tests, LLBLGenProUnitTest");
 		}
 
 		[Test]
@@ -214,9 +216,10 @@ namespace ReadWriteTests.SqlServer
 		}
 
 
-		[TestFixtureTearDown]
+		[OneTimeTearDown]
 		public void CleanUp()
 		{
+			if(!TestConfig.CanConnect(TestConfig.WriteTests)) return;
 			// remove all data for this testrun
 			GetContext().CallClearTestRunData(_testRunID);
 			//GetContext().CallClearAll();
@@ -231,10 +234,7 @@ namespace ReadWriteTests.SqlServer
 				var resourceStream = modelAssembly.GetManifestResourceStream("WriteTests.WriteTestsMappings.xml");
 				_mappingSourceFromXmlFile = XmlMappingSource.FromStream(resourceStream);
 			}
-			// pass in sql connection to make sure the profiler gathers the right information
-			var factory = DbProviderFactories.GetFactory("System.Data.SqlClient");
-			var connection = factory.CreateConnection();
-			connection.ConnectionString = ConfigurationManager.ConnectionStrings["WriteTestsConnectionString.SQL Server (SqlClient)"].ConnectionString;
+			var connection = new SqlConnection(TestConfig.WriteTests);
 			return new WriteTestsDataContext(connection, _mappingSourceFromXmlFile);
 		}
 	}

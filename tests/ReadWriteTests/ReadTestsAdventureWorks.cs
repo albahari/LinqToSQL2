@@ -10,9 +10,7 @@ using ReadTestsAdventureWorks2008.EntityClasses;
 using ReadTestsAdventureWorks2008.TypedViewClasses;
 using System.Data.Linq.Mapping;
 
-using SD.Tools.OrmProfiler.Interceptor;
-using System.Data.Common;
-using System.Configuration;
+using System.Data.SqlClient;
 using System.IO;
 
 namespace ReadWriteTests.SqlServer
@@ -29,10 +27,14 @@ namespace ReadWriteTests.SqlServer
 		#endregion
 
 
-		[TestFixtureSetUp]
+		[OneTimeSetUp]
 		public void SetupTests()
 		{
-			InterceptorCore.Initialize("Read tests, AdventureWorks 2008");
+			if(!TestConfig.CanConnect(TestConfig.AdventureWorks))
+			{
+				Assert.Ignore("Cannot connect to the AdventureWorks test database. " +
+					"Set L2S_ADVENTUREWORKS_CONN to a SQL Server hosting the AdventureWorks 2008R2+ sample.");
+			}
 		}
 
 
@@ -529,10 +531,7 @@ WHERE NOT (EXISTS(
 				var resourceStream = modelAssembly.GetManifestResourceStream("AdventureWorks2008.AdventureWorks2008Mappings.xml");
 				_mappingSourceFromXmlFile = XmlMappingSource.FromStream(resourceStream);
 			}
-			// pass in sql connection to make sure the profiler gathers the right information
-			var factory = DbProviderFactories.GetFactory("System.Data.SqlClient");
-			var connection = factory.CreateConnection();
-			connection.ConnectionString = ConfigurationManager.ConnectionStrings["AdventureWorksConnectionString.SQL Server (SqlClient)"].ConnectionString;
+			var connection = new SqlConnection(TestConfig.AdventureWorks);
 			return new AdventureWorks2008DataContext(connection, _mappingSourceFromXmlFile);
 		}
 

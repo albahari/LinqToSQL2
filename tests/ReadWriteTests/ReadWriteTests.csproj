@@ -1,81 +1,31 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{9F6F9876-C1B1-4AB4-9B0B-3142A7F83913}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>ReadWriteTests.SqlServer</RootNamespace>
+    <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>ReadWriteTests</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
+    <RootNamespace>ReadWriteTests.SqlServer</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);SYSLIB0011;CS0618</NoWarn>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="nunit.framework">
-      <HintPath>..\packages\NUnit.2.6.4\lib\nunit.framework.dll</HintPath>
-    </Reference>
-    <Reference Include="SD.Tools.LinqToSQL2">
-      <HintPath>..\..\src\bin\Debug\SD.Tools.LinqToSQL2.dll</HintPath>
-    </Reference>
-    <Reference Include="SD.Tools.OrmProfiler.Interceptor.NET45">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Solutions Design\ORM Profiler v1.5\SD.Tools.OrmProfiler.Interceptor.NET45.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Configuration" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Xml" />
+    <Compile Remove="Properties\AssemblyInfo.cs" />
+    <None Remove="App.config" />
   </ItemGroup>
+
   <ItemGroup>
-    <Compile Include="ConstantsEnums.cs" />
-    <Compile Include="EntityCreator.cs" />
-    <Compile Include="Pair.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="ReadTestsAdventureWorks.cs" />
-    <Compile Include="WriteTests.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.13.3" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
   </ItemGroup>
+
   <ItemGroup>
-    <None Include="App.config" />
-    <None Include="packages.config" />
+    <ProjectReference Include="..\AdventureWorks2008Model\AdventureWorks2008.csproj" />
+    <ProjectReference Include="..\WriteTestsModel\WriteTestsModel.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\AdventureWorks2008Model\AdventureWorks2008.csproj">
-      <Project>{26a446b2-7479-4dcb-a13b-c2a97f128a36}</Project>
-      <Name>AdventureWorks2008</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\WriteTestsModel\WriteTestsModel.csproj">
-      <Project>{aa675c83-9abf-4f19-8601-ad5fddee0172}</Project>
-      <Name>WriteTestsModel</Name>
-    </ProjectReference>
-  </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
+
 </Project>
