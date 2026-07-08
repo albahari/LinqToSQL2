@@ -1387,6 +1387,12 @@ namespace System.Data.Linq.DbEngines.SqlServer
 											  this.Mode == SqlServerProviderMode.Sql2005 ||
 											  this.Mode == SqlServerProviderMode.SqlCE)
 				? SqlMultiplexerOptionType.EnableBigJoin : SqlMultiplexerOptionType.None;
+			if(this.Mode == SqlServerProviderMode.Sql2008 || this.Mode == SqlServerProviderMode.Sql2005)
+			{
+				// these providers support ROW_NUMBER, so the big join can synthesize an ordering
+				// for outer sources that lack primary keys (SqlCE cannot)
+				options |= SqlMultiplexerOptionType.EnableRowNumberOrdering;
+			}
 			SqlMultiplexer mux = new SqlMultiplexer(options, parentParameters, _sqlFactory);
 			node = mux.Multiplex(node);
 			validator.Validate(node);

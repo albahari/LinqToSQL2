@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Data.Linq.Provider.Common;
 using System.Data.Linq.Provider.NodeTypes;
+using System.Linq.Expressions;
 
 namespace System.Data.Linq.Provider.Visitors
 {
@@ -35,7 +36,7 @@ namespace System.Data.Linq.Provider.Visitors
 			   !this.hasBigJoin && this.canJoin && this.isTopLevel && this.outerSelect != null
 			   && !MultisetChecker.HasMultiset(sms.Select.Selection)
 			   && BigJoinChecker.CanBigJoin(sms.Select)
-			   && BigJoinChecker.CanProvideDefaultOrdering(this.outerSelect.From))
+			   && this.EnsureOrderableOuterFrom())
 			{
 
 				sms.Select = this.VisitSelect(sms.Select);
@@ -63,6 +64,37 @@ namespace System.Data.Linq.Provider.Visitors
 			return QueryExtractor.Extract(sms, this.parentParameters);
 		}
 
+
+		/// <summary>
+		/// A big join requires the final rowset to be ordered so that each outer row's joined rows are
+		/// contiguous: the reader consumes 'count' consecutive rows per outer row with no key check.
+		/// The ordering is synthesized later by OrderByLifter (triggered via SqlOrderingType.Always)
+		/// from the primary keys of the tables in the outer FROM. When any source there lacks identity
+		/// members (views, PK-less tables, TVFs), no such ordering exists and the big join would
+		/// silently associate rows with the wrong parents. In that case - provided the target server
+		/// supports it - wrap the outer FROM in a sub-select that computes a ROW_NUMBER over the outer
+		/// rows (before the apply-join multiplies them): OrderByLifter turns any row-number column it
+		/// encounters into a top-level ORDER BY, the same machinery Skip/Take paging relies on, which
+		/// restores contiguity even for duplicate outer rows. Returns false if neither default nor
+		/// synthesized ordering is possible, in which case the caller falls back to per-row queries.
+		/// </summary>
+		private bool EnsureOrderableOuterFrom()
+		{
+			if(BigJoinChecker.CanProvideDefaultOrdering(this.outerSelect.From))
+			{
+				return true;
+			}
+			if((this.options & SqlMultiplexerOptionType.EnableRowNumberOrdering) == 0)
+			{
+				return false;
+			}
+			Expression sourceExpression = this.outerSelect.SourceExpression;
+			SqlColumn rowNumberColumn = new SqlColumn("ROW_NUMBER", sql.RowNumber(new List<SqlOrderExpression>(), sourceExpression));
+			SqlSelect wrapper = new SqlSelect(new SqlNop(rowNumberColumn.ClrType, rowNumberColumn.SqlType, sourceExpression), this.outerSelect.From, sourceExpression);
+			wrapper.Row.Columns.Add(rowNumberColumn);
+			this.outerSelect.From = new SqlAlias(wrapper);
+			return true;
+		}
 
 		internal override SqlExpression VisitElement(SqlSubSelect elem)
 		{

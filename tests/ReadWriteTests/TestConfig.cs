@@ -21,6 +21,14 @@ namespace ReadWriteTests.SqlServer
 			Environment.GetEnvironmentVariable("L2S_WRITETESTS_CONN")
 			?? "Server=localhost;Database=LLBLGenProUnitTest;Integrated Security=true;TrustServerCertificate=true";
 
+		/// <summary>
+		/// Connection string for the BigJoinOrderingTests fixture, which creates and seeds its own
+		/// database (see that fixture's OneTimeSetUp). Only the server part needs to be reachable.
+		/// </summary>
+		public static string BigJoin =>
+			Environment.GetEnvironmentVariable("L2S_BIGJOIN_CONN")
+			?? "Server=localhost;Database=L2SBigJoinTests;Integrated Security=true;TrustServerCertificate=true";
+
 		/// <summary>Returns true if a connection to the given connection string can be opened.</summary>
 		public static bool CanConnect(string connectionString)
 		{

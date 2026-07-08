@@ -58,10 +58,17 @@ namespace System.Data.Linq
 	}
 
 
+	[Flags]
 	internal enum SqlMultiplexerOptionType
 	{
-		None,
-		EnableBigJoin
+		None = 0,
+		EnableBigJoin = 1,
+		/// <summary>
+		/// Allows the multiplexer to synthesize a ROW_NUMBER ordering over the outer rows when the
+		/// outer FROM has no primary keys to order by (views, PK-less tables, TVFs), so the big join
+		/// remains available. Requires a provider that supports ROW_NUMBER (SQL 2005+, not CE).
+		/// </summary>
+		EnableRowNumberOrdering = 2
 	}
 
 	internal enum SqlParameterType
