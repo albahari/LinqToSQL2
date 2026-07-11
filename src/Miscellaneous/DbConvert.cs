@@ -91,6 +91,12 @@ namespace System.Data.Linq {
                     }
                 }
             }
+            else if (toType == typeof(float[]) && fromType == typeof(string)) {
+                return ParseVector((string)value);
+            }
+            else if (toType == typeof(string) && fromType == typeof(float[])) {
+                return FormatVector((float[])value);
+            }
             else if (toType.IsEnum) {
                 if (fromType == typeof(string)) {
                     string text = ((string)value).Trim();
@@ -122,7 +128,7 @@ namespace System.Data.Linq {
                 else if (fromType == typeof(DateTimeOffset)) {
                     return DateTimeOffset.Parse(value.ToString(), Globalization.CultureInfo.InvariantCulture).TimeOfDay;
                 }
-#if NET6_0
+#if NET6_0_OR_GREATER
                 else if (fromType == typeof (TimeOnly))
                 {
                     return ((TimeOnly)value).ToTimeSpan ();
@@ -144,7 +150,7 @@ namespace System.Data.Linq {
                     DateTimeOffset dto = new DateTimeOffset();
                     return dto.Add((TimeSpan)value);
                 }
-#if NET6_0
+#if NET6_0_OR_GREATER
                 else if (toType == typeof (TimeOnly))
                     return TimeOnly.FromTimeSpan ((TimeSpan)value);
 #endif
@@ -158,7 +164,7 @@ namespace System.Data.Linq {
             else if (toType == typeof(DateTimeOffset) && fromType == typeof(DateTime)) {
                 return new DateTimeOffset((DateTime)value);
             }
-#if NET6_0
+#if NET6_0_OR_GREATER
             else if (toType == typeof (DateTime) && fromType == typeof(DateOnly))
             {
                 return ((DateOnly)value).ToDateTime (default);
@@ -235,6 +241,31 @@ namespace System.Data.Linq {
                     throw Error.CouldNotConvert(fromType, toType);
                 }
             }
+        }
+
+        // SQL Server 2025's vector type is surfaced to down-level TDS clients as a JSON array of
+        // floats (e.g. "[1.0000000e+000,2.5000000e+000]"). These bridge that form and float[].
+        private static float[] ParseVector(string value) {
+            string s = value.Trim();
+            if (s.Length < 2 || s[0] != '[' || s[s.Length - 1] != ']')
+                throw Error.CouldNotConvert(typeof(string), typeof(float[]));
+            string inner = s.Substring(1, s.Length - 2);
+            if (inner.Trim().Length == 0)
+                return Array.Empty<float>();
+            string[] parts = inner.Split(',');
+            float[] result = new float[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+                result[i] = float.Parse(parts[i], Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture);
+            return result;
+        }
+
+        private static string FormatVector(float[] value) {
+            StringBuilder sb = new StringBuilder(value.Length * 14 + 2).Append('[');
+            for (int i = 0; i < value.Length; i++) {
+                if (i > 0) sb.Append(',');
+                sb.Append(value[i].ToString(Globalization.CultureInfo.InvariantCulture));
+            }
+            return sb.Append(']').ToString();
         }
     }
 }

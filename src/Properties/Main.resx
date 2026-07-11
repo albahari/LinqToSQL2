@@ -459,6 +459,7 @@
 	<data name="InsertItemMustBeConstant" xml:space="preserve"><value>The item of an Insert must be a constant value expression.</value></data>
 	<data name="BadProjectionInSelect" xml:space="preserve"><value>Bad projection in Select.</value></data>
 	<data name="NonConstantExpressionsNotSupportedForRounding" xml:space="preserve"><value>Only arguments that can be evaluated on the client are supported for the MidpointRounding argument in Math.Round.</value></data>
+	<data name="VectorDistanceRequiresVectorColumn" xml:space="preserve"><value>At least one argument to VectorDistance must be a column mapped to a vector type (the server requires an explicit vector dimension, which is inferred from the column).</value></data>
 	<data name="DistributedTransactionsAreNotAllowed" xml:space="preserve"><value>Distributed transactions are not allowed.</value></data>
 	<data name="UnrecognizedExpressionNode" xml:space="preserve"><value>Unrecognized expression node: {0}</value></data>
 	<data name="InvalidGroupByExpression" xml:space="preserve"><value>The group by operation contains an expression that cannot be translated.</value></data>

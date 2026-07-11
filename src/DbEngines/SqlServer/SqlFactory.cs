@@ -137,7 +137,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				);
 		}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 		internal override SqlExpression FunctionCallTimeOnlyAdd (string partName, SqlExpression value, SqlExpression expr, Expression sourceExpression, bool asNullable)
 		{
 			Type returnType = asNullable ? typeof (TimeOnly?) : typeof (TimeOnly);

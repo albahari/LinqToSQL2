@@ -340,7 +340,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 							{
 								sb.Append("Time");
 							}
-#if NET6_0
+#if NET6_0_OR_GREATER
 							else if (type == typeof (DateOnly))
 							{
 								sb.Append ("Date");

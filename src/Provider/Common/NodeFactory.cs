@@ -100,7 +100,7 @@ namespace System.Data.Linq.Provider.Common
 			return expr;
 		}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 		internal virtual SqlExpression FunctionCallTimeOnlyAdd (string partName, SqlExpression value, SqlExpression expr, Expression sourceExpression, bool asNullable)
 		{
 			return expr;

@@ -94,7 +94,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					return typeof(long);
 				case SqlDbType.Bit:
 					return typeof(bool);
-#if NET6_0
+#if NET6_0_OR_GREATER
                 case SqlDbType.Date when allowNet6Types:
                     return typeof (DateOnly);
                 case SqlDbType.Time when allowNet6Types:

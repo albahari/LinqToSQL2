@@ -17,7 +17,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			{
 				if (type == typeof (DateTimeOffset)) 
 					return SqlTypeSystem.Create(SqlDbType.DateTimeOffset);
-#if NET6_0
+#if NET6_0_OR_GREATER
 				if (type == typeof (DateOnly))
 					return SqlTypeSystem.Create (SqlDbType.Date);
 

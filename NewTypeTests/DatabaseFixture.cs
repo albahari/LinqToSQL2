@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data.Linq.DbEngines.SqlServer;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System;
 
 namespace NewTypeTests
 {
@@ -13,13 +8,13 @@ namespace NewTypeTests
 
         public DatabaseFixture ()
         {
-			SqlLibrary.PreferMicrosoftDataClient = true;
+			TestConfig.EnsureDatabase ();
 			Data = new TypedDataContext();
 
 			Data.ExecuteCommand (@"drop table if exists DateTimeTest
 create table DateTimeTest (ID int not null primary key, DateOnly Date, TimeOnly Time, DateAndTime datetime2, Year int, Month int, Day int, Hour int, Minute int, Second int, Millisecond int)
-insert DateTimeTest 
-(ID, DateOnly, TimeOnly, DateAndTime, Year, Month, Day, Hour, Minute, Second, Millisecond) values 
+insert DateTimeTest
+(ID, DateOnly, TimeOnly, DateAndTime, Year, Month, Day, Hour, Minute, Second, Millisecond) values
 (1, '2020-1-2', '10:11:12.123', '2020-1-2 10:11:12.123', 2020, 1, 2, 10, 11, 12, 123)");
         }
 

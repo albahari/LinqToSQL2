@@ -67,7 +67,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			{
 				return IsSupportedDateTimeNew(snew);
 			}
-#if NET6_0
+#if NET6_0_OR_GREATER
 			else if(snew.ClrType == typeof (DateOnly))
 			{
 				return IsSupportedDateOnlyNew(snew);
@@ -113,7 +113,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			return false;
 		}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 		private static bool IsSupportedDateOnlyNew (SqlNew sox)
 		{
 			if (sox.ClrType == typeof (DateOnly)
@@ -182,7 +182,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			return false;
 		}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 		static bool IsDateOnlyExtractionMethod (SqlMethodCall mc) =>
 			mc.Arguments.Count == 1 &&
 			mc.Arguments[0].ClrType is var fromType && (fromType == typeof (DateTime) || fromType == typeof (DateTime?)) &&
@@ -214,7 +214,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			{
 				best = ms;
 			}
-#if NET6_0
+#if NET6_0_OR_GREATER
 			ms = GetDateOnlyMethodSupport (mc);
 			if (ms > best)
 			{
@@ -384,6 +384,10 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				{
 					return MethodSupport.Method;
 				}
+				else if(mc.Method.Name is "JsonValue" or "JsonQuery" or "IsJson" or "JsonPathExists" or "JsonModify" or "JsonContains" or "VectorDistance")
+				{
+					return MethodSupport.Method;
+				}
 			}
 			return MethodSupport.None;
 		}
@@ -418,7 +422,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			return MethodSupport.None;
 		}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 		private static MethodSupport GetDateOnlyMethodSupport (SqlMethodCall mc)
 		{
 			if (!mc.Method.IsStatic && mc.Method.DeclaringType == typeof (DateOnly))
@@ -768,7 +772,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			return IsSupportedStringMember(m)
 				|| IsSupportedBinaryMember(m)
 				|| IsSupportedDateTimeMember(m)
-#if NET6_0
+#if NET6_0_OR_GREATER
 				|| IsSupportedDateOnlyMember(m)
 				|| IsSupportedTimeOnlyMember (m)
 #endif
@@ -848,7 +852,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			return false;
 		}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 		static string GetDateOnlyPart (string memberName) => memberName is "Day" or "Month" or "Year" or "DayOfYear" ? memberName : null;
 
 		static string GetTimeOnlyPart (string memberName) => memberName is "Hour" or "Minute" or "Second" or "Millisecond" ? memberName : null;
@@ -940,7 +944,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				Type leftType = TypeSystem.GetNonNullableType(bo.Left.ClrType);
 				if(leftType == typeof(DateTime) || leftType == typeof(DateTimeOffset))
 				{
-#if NET6_0
+#if NET6_0_OR_GREATER
 					// Don't need special handling for DateOnly/TimeOnly because these types don't support binary operations in .NET
 #endif
 					return this.TranslateDateTimeBinary(bo);
@@ -1000,7 +1004,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				{
 					return TranslateNewDateTimeOffset(sox);
 				}
-#if NET6_0
+#if NET6_0_OR_GREATER
 				else if (sox.ClrType == typeof (DateOnly))
 				{
 					return TranslateNewDateOnly (sox);
@@ -1174,7 +1178,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				throw Error.UnsupportedDateTimeOffsetConstructorForm();
 			}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 			private SqlExpression TranslateNewDateOnly (SqlNew sox)
 			{
 				Expression source = sox.SourceExpression;
@@ -1357,7 +1361,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					{
 						return TranslateVbLikeString(mc);
 					}
-#if NET6_0
+#if NET6_0_OR_GREATER
 					else if (IsDateOnlyExtractionMethod (mc))
 					{
 						SqlExpression date = new SqlVariable (typeof (void), null, "DATE", source);
@@ -1415,7 +1419,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					{
 						returnValue = TranslateDateTimeOffsetInstanceMethod(mc);
 					}
-#if NET6_0
+#if NET6_0_OR_GREATER
 					else if (declType == typeof (DateOnly))
 					{
 						returnValue = TranslateDateOnlyInstanceMethod (mc);
@@ -1503,8 +1507,148 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					SqlExpression length = sql.FunctionCallDataLength(mc.Arguments[0]);
 					return length;
 				}
+				else if(name == "JsonValue")
+				{
+					return sql.FunctionCall(typeof(string), "JSON_VALUE", new SqlExpression[] { mc.Arguments[0], mc.Arguments[1] }, source);
+				}
+				else if(name == "JsonQuery")
+				{
+					return sql.FunctionCall(typeof(string), "JSON_QUERY", new SqlExpression[] { mc.Arguments[0], mc.Arguments[1] }, source);
+				}
+				else if(name == "JsonModify")
+				{
+					return sql.FunctionCall(typeof(string), "JSON_MODIFY", new SqlExpression[] { mc.Arguments[0], mc.Arguments[1], mc.Arguments[2] }, source);
+				}
+				else if(name == "IsJson")
+				{
+					return TranslateJsonPredicate("ISJSON", mc, source);
+				}
+				else if(name == "JsonPathExists")
+				{
+					return TranslateJsonPredicate("JSON_PATH_EXISTS", mc, source);
+				}
+				else if(name == "JsonContains")
+				{
+					// JSON_CONTAINS demands a json-typed target: columns are json server-side and pass
+					// through, but client-value targets arrive as nvarchar parameters and need converting.
+					SqlExpression[] args = mc.Arguments.ToArray();
+					args[0] = ToJsonOperand(args[0], source);
+
+					// L2S types boolean values as int, but JSON_CONTAINS compares by SQL type (int 1 does
+					// not match a JSON true), so convert the search value back to bit.
+					if(mc.Method.GetParameters()[1].ParameterType == typeof(bool))
+						args[1] = sql.ConvertTo(typeof(bool), args[1]);
+
+					return sql.Binary(SqlNodeType.EQ,
+						sql.FunctionCall(typeof(int), "JSON_CONTAINS", args, source),
+						sql.ValueFromObject(1, false, source));
+				}
+				else if(name == "VectorDistance")
+				{
+					return TranslateVectorDistance(mc, source);
+				}
 
 				return returnValue;
+			}
+
+			private SqlExpression ToJsonOperand(SqlExpression expr, Expression source)
+			{
+				if(expr.NodeType is SqlNodeType.Value or SqlNodeType.ClientParameter)
+					return sql.FunctionCall(typeof(string), "CONVERT",
+						new SqlExpression[] { new SqlVariable(typeof(void), null, "json", source), expr }, source);
+				return expr;
+			}
+
+			/// <summary>
+			/// Translates SqlMethods.VectorDistance to VECTOR_DISTANCE(metric, v1, v2). Operands that
+			/// aren't vector columns arrive as float[] client values; those are converted to their
+			/// JSON-array string form and wrapped in CONVERT(vector(n), ...) - the server demands an
+			/// explicit dimension, which is inferred from whichever operand is a mapped vector column.
+			/// </summary>
+			private SqlExpression TranslateVectorDistance(SqlMethodCall mc, Expression source)
+			{
+				SqlExpression vector1 = mc.Arguments[0];
+				SqlExpression vector2 = mc.Arguments[2];
+
+				int? dimensions = GetVectorDimensions(vector1) ?? GetVectorDimensions(vector2)
+					?? GetClientVectorLength(vector1) ?? GetClientVectorLength(vector2);
+				if(dimensions == null)
+					throw Error.VectorDistanceRequiresVectorColumn();
+
+				return sql.FunctionCall(typeof(double), "VECTOR_DISTANCE",
+					new SqlExpression[] { mc.Arguments[1], ToVectorOperand(vector1, dimensions.Value, source), ToVectorOperand(vector2, dimensions.Value, source) },
+					source);
+			}
+
+			/// <summary>
+			/// Returns the dimension count if the expression is a column mapped to the SQL Server 2025
+			/// vector type (whose DbType retains the declared dimension, e.g. "Vector(1536)"), else null.
+			/// </summary>
+			private static int? GetVectorDimensions(SqlExpression expr)
+			{
+				SqlColumn column = (expr as SqlColumnRef)?.Column ?? expr as SqlColumn;
+				string dbType = column?.MetaMember?.DbType;
+				if(dbType == null || !dbType.TrimStart().StartsWith("vector", StringComparison.OrdinalIgnoreCase))
+					return null;
+
+				int open = dbType.IndexOf('(');
+				int close = open < 0 ? -1 : dbType.IndexOf(')', open);
+				if(close < 0)
+					return null;
+
+				return Int32.TryParse(dbType.Substring(open + 1, close - open - 1), out int n) ? n : (int?)null;
+			}
+
+			/// <summary>
+			/// Fallback dimension source: the length of a client-supplied float[] value. Not available
+			/// for compiled queries (whose values are deferred), but those can rely on column metadata.
+			/// </summary>
+			private static int? GetClientVectorLength(SqlExpression expr) =>
+				expr.NodeType == SqlNodeType.Value && ((SqlValue)expr).Value is float[] vector ? vector.Length : (int?)null;
+
+			private SqlExpression ToVectorOperand(SqlExpression expr, int dimensions, Expression source)
+			{
+				if(GetVectorDimensions(expr) != null)
+					return expr;   // already a vector column server-side
+
+				SqlExpression text;
+				switch(expr.NodeType)
+				{
+					case SqlNodeType.Value:
+						text = sql.ValueFromObject(DBConvert.ChangeType(((SqlValue)expr).Value, typeof(string)), typeof(string), true, source);
+						break;
+					case SqlNodeType.ClientParameter:
+						// Compiled query: re-wrap the deferred accessor so it yields the string form
+						SqlClientParameter cp = (SqlClientParameter)expr;
+						MethodInfo changeType = typeof(DBConvert).GetMethod("ChangeType", new[] { typeof(object), typeof(Type) });
+						text = new SqlClientParameter(typeof(string),
+							sql.TypeProvider.From(typeof(string), ProviderConstants.LargeTypeSizeIndicator),
+							Expression.Lambda(
+								Expression.Convert(
+									Expression.Call(changeType, Expression.Convert(cp.Accessor.Body, typeof(object)), Expression.Constant(typeof(string), typeof(Type))),
+									typeof(string)),
+								cp.Accessor.Parameters),
+							source);
+						break;
+					default:
+						return expr;   // some other server-side expression; pass through untouched
+				}
+
+				// The dimension is parsed from mapping metadata, so embedding it as raw text is safe.
+				// ClrType string (not float[]) so SqlMethodTransformer doesn't re-wrap in CONVERT(NVarChar).
+				return sql.FunctionCall(typeof(string), "CONVERT",
+					new SqlExpression[] { new SqlVariable(typeof(void), null, "vector(" + dimensions + ")", source), text },
+					source);
+			}
+
+			/// <summary>
+			/// ISJSON and JSON_PATH_EXISTS return int (1/0/NULL), so surface them as boolean
+			/// predicates by comparing with 1.
+			/// </summary>
+			private SqlExpression TranslateJsonPredicate(string functionName, SqlMethodCall mc, Expression source)
+			{
+				SqlExpression call = sql.FunctionCall(typeof(int), functionName, mc.Arguments.ToArray(), source);
+				return sql.Binary(SqlNodeType.EQ, call, sql.ValueFromObject(1, false, source));
 			}
 
 			private SqlExpression CreateComparison(SqlExpression a, SqlExpression b, Expression source)
@@ -1661,7 +1805,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				return returnValue;
 			}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 			private SqlExpression TranslateDateOnlyInstanceMethod (SqlMethodCall mc)
 			{
 				SqlExpression returnValue = null;
@@ -2873,7 +3017,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				{
 					return sql.FunctionCallDataLength(exp);
 				}
-#if NET6_0
+#if NET6_0_OR_GREATER
 				else if (baseClrTypeOfExpr == typeof(DateOnly))
                 {
 					if (GetDateOnlyPart (m.Member.Name) != null)
@@ -3096,7 +3240,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				return sql.FunctionCallDateAdd("ms", sql.Mod(sql.Divide(sqlTicks, TimeSpan.TicksPerMillisecond), 86400000), daysAdded, source, asNullable);
 			}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 			SqlExpression CreateTimeOnlyFromTimeAndTicks (SqlExpression sqlTime, SqlExpression sqlTicks, Expression source, bool asNullable = false)
 			{
 				return sql.FunctionCallTimeOnlyAdd ("ms", sql.Mod (sql.Divide (sqlTicks, TimeSpan.TicksPerMillisecond), 86400000), sqlTime, source, asNullable);
@@ -3116,7 +3260,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				return sql.FunctionCallDateAdd("ms", sql.Mod(msBigint, 86400000), daysAdded, source, asNullable);
 			}
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 			SqlExpression CreateTimeOnlyFromTimeAndMs (SqlExpression sqlTime, SqlExpression ms, Expression source, bool asNullable = false)
 			{
 				SqlExpression msBigint = sql.ConvertToBigint (ms);

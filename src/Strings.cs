@@ -975,7 +975,7 @@ namespace System.Data.Linq
 				return SR.GetString("UnsupportedDateTimeOffsetConstructorForm");
 			}
 		}
-#if NET6_0
+#if NET6_0_OR_GREATER
 		internal static string UnsupportedDateOnlyConstructorForm => SR.GetString ("UnsupportedDateOnlyConstructorForm");
 		internal static string UnsupportedTimeOnlyConstructorForm => SR.GetString ("UnsupportedTimeOnlyConstructorForm");
 #endif
@@ -1005,6 +1005,13 @@ namespace System.Data.Linq
 			get
 			{
 				return SR.GetString("NonConstantExpressionsNotSupportedForRounding");
+			}
+		}
+		internal static string VectorDistanceRequiresVectorColumn
+		{
+			get
+			{
+				return SR.GetString("VectorDistanceRequiresVectorColumn");
 			}
 		}
 		internal static string CompiledQueryAgainstMultipleShapesNotSupported

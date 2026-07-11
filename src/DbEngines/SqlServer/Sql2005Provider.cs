@@ -54,6 +54,10 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					if(type == typeof(System.Xml.Linq.XDocument) ||
 					   type == typeof(System.Xml.Linq.XElement))
 						return ProviderConstants.XmlType;
+					if(type == typeof(float[]))
+						// float[] represents the SQL Server 2025 vector type, which travels to and from
+						// down-level clients as JSON-array text (see DBConvert.ParseVector/FormatVector).
+						return SqlTypeSystem.Create(SqlDbType.NVarChar, ProviderConstants.LargeTypeSizeIndicator);
 					// else UDT?
 					return new SqlType(type);
 				}

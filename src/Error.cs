@@ -588,7 +588,7 @@ namespace System.Data.Linq
 		{
 			return new NotSupportedException(Strings.UnsupportedDateTimeOffsetConstructorForm);
 		}
-#if NET6_0
+#if NET6_0_OR_GREATER
 		internal static Exception UnsupportedDateOnlyConstructorForm ()
 		{
 			return new NotSupportedException (Strings.UnsupportedDateOnlyConstructorForm);
@@ -633,6 +633,10 @@ namespace System.Data.Linq
 		internal static Exception NonConstantExpressionsNotSupportedForRounding()
 		{
 			return new NotSupportedException(Strings.NonConstantExpressionsNotSupportedForRounding);
+		}
+		internal static Exception VectorDistanceRequiresVectorColumn()
+		{
+			return new NotSupportedException(Strings.VectorDistanceRequiresVectorColumn);
 		}
 		internal static Exception CompiledQueryAgainstMultipleShapesNotSupported()
 		{

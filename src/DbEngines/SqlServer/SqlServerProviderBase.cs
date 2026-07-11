@@ -88,6 +88,26 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			{
 				typeName = "Binary";
 			}
+
+			if(String.Compare(typeName, "json", StringComparison.OrdinalIgnoreCase) == 0)
+			{
+				// SQL Server 2025's native json type has no SqlDbType value on .NET 6, and the TDS layer
+				// surfaces it to down-level clients as a string, so type it as nvarchar(max) - which the
+				// server implicitly converts to json on insert/update.
+				typeName = "NVarChar";
+				param1 = "max";
+			}
+
+			if(String.Compare(typeName, "vector", StringComparison.OrdinalIgnoreCase) == 0)
+			{
+				// SQL Server 2025's vector type: the TDS layer surfaces it to down-level clients as a
+				// JSON-array string, and nvarchar implicitly converts to vector on insert/update.
+				// DBConvert bridges between that string form and float[] entity members. The parenthesized
+				// dimension (e.g. Vector(1536)) must not become an nvarchar length, hence max.
+				typeName = "NVarChar";
+				param1 = "max";
+				param2 = null;
+			}
 			#endregion
 
 			// since we're going to parse the enum value below, we verify
@@ -561,7 +581,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 		[SuppressMessage("Microsoft.Performance", "CA1800:DoNotCastUnnecessarily", Justification = "[....]: Cast is dependent on node type and casts do not happen unecessarily in a single code path.")]
 		internal override ProviderType GetBestType(ProviderType typeA, ProviderType typeB)
 		{
-#if NET6_0
+#if NET6_0_OR_GREATER
 			// Shouldn't need special handling for DateOnly/TimeOnly
 #endif
 

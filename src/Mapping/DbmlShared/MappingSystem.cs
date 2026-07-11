@@ -75,7 +75,7 @@ namespace LinqToSqlShared.Mapping {
             }
             if (type == typeof(Guid) || type == typeof(DateTime) || type == typeof(DateTimeOffset) ||
                 type == typeof(TimeSpan) || type == typeof(Binary)
-#if NET6_0
+#if NET6_0_OR_GREATER
                 || type == typeof(DateOnly) || type == typeof(TimeOnly)
 #endif
                 )

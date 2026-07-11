@@ -96,7 +96,7 @@ namespace System.Data.Linq.Provider.Visitors
 			{
 				return false;
 			}
-#if NET6_0
+#if NET6_0_OR_GREATER
 			// We can't convert between DateOnly and DateTimeOffset, so there should be nothing to do
 #endif
 			return (expected == typeof(DateTime) && actual == typeof(DateTimeOffset));

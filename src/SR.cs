@@ -163,6 +163,7 @@ namespace System.Data.Linq
 		internal const string NonConstantExpressionsNotSupportedFor = "NonConstantExpressionsNotSupportedFor";
 		internal const string MathRoundNotSupported = "MathRoundNotSupported";
 		internal const string SqlMethodOnlyForSql = "SqlMethodOnlyForSql";
+		internal const string VectorDistanceRequiresVectorColumn = "VectorDistanceRequiresVectorColumn";
 		internal const string NonConstantExpressionsNotSupportedForRounding = "NonConstantExpressionsNotSupportedForRounding";
 		internal const string CompiledQueryAgainstMultipleShapesNotSupported = "CompiledQueryAgainstMultipleShapesNotSupported";
 		internal const string LenOfTextOrNTextNotSupported = "LenOfTextOrNTextNotSupported";

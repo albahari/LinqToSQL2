@@ -822,7 +822,7 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 				case ConversionMethod.Lift:
 					if(_nodeFactory.IsDateType(expr))
 					{
-#if NET6_0
+#if NET6_0_OR_GREATER
 						// This was already in place and seems to work
 #endif
 						expr = (SqlExpression)ConvertDateToDateTime2(expr);

@@ -5,7 +5,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 
-#if NET6_0
+#if NET6_0_OR_GREATER
 namespace System.Data.Linq
 {
 	public static class LinqToSqlExtensions
