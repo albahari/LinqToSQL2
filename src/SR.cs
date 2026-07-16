@@ -167,6 +167,9 @@ namespace System.Data.Linq
 		internal const string SequenceOperatorRequiresOrderedSequence = "SequenceOperatorRequiresOrderedSequence";
 		internal const string SequenceOperatorCannotFollowPaging = "SequenceOperatorCannotFollowPaging";
 		internal const string OrderedStringJoinNotSupported = "OrderedStringJoinNotSupported";
+		internal const string ExecuteDmlRequiresTableQuery = "ExecuteDmlRequiresTableQuery";
+		internal const string ExecuteDmlUnsupportedQueryShape = "ExecuteDmlUnsupportedQueryShape";
+		internal const string ExecuteUpdateInvalidSetters = "ExecuteUpdateInvalidSetters";
 		internal const string NonConstantExpressionsNotSupportedForRounding = "NonConstantExpressionsNotSupportedForRounding";
 		internal const string CompiledQueryAgainstMultipleShapesNotSupported = "CompiledQueryAgainstMultipleShapesNotSupported";
 		internal const string LenOfTextOrNTextNotSupported = "LenOfTextOrNTextNotSupported";

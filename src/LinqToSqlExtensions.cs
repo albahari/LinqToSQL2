@@ -65,6 +65,49 @@ namespace System.Data.Linq
 					));
 		}
 
+		// --- Set-based DML (ExecuteDelete / ExecuteUpdate) ---
+
+		/// <summary>
+		/// Deletes all rows matched by the query in a single DELETE statement, without loading entities or
+		/// involving the change tracker. Executes immediately (independently of SubmitChanges) and returns the
+		/// number of rows deleted. Note that already-tracked entities are not refreshed by this operation.
+		/// </summary>
+		public static int ExecuteDelete<TSource> (this IQueryable<TSource> source)
+		{
+			if (source == null)
+				throw Error.ArgumentNull("source");
+
+			return source.Provider.Execute<int>(
+				Expression.Call(
+					null,
+					GetMethodInfo(ExecuteDelete, source),
+					new Expression[] { source.Expression }
+					));
+		}
+
+		/// <summary>
+		/// Updates all rows matched by the query in a single UPDATE statement, without loading entities or
+		/// involving the change tracker. Columns are assigned via a chain of SetProperty calls, e.g.
+		/// <c>q.ExecuteUpdate(s => s.SetProperty(r => r.Price, r => r.Price * 1.1m).SetProperty(r => r.Flag, true))</c>.
+		/// Executes immediately (independently of SubmitChanges) and returns the number of rows updated.
+		/// Note that already-tracked entities are not refreshed by this operation.
+		/// </summary>
+		public static int ExecuteUpdate<TSource> (this IQueryable<TSource> source,
+			Expression<Func<SetPropertyCalls<TSource>, SetPropertyCalls<TSource>>> setPropertyCalls)
+		{
+			if (source == null)
+				throw Error.ArgumentNull("source");
+			if (setPropertyCalls == null)
+				throw Error.ArgumentNull("setPropertyCalls");
+
+			return source.Provider.Execute<int>(
+				Expression.Call(
+					null,
+					GetMethodInfo(ExecuteUpdate, source, setPropertyCalls),
+					new Expression[] { source.Expression, Expression.Quote(setPropertyCalls) }
+					));
+		}
+
 		private static MethodInfo GetMethodInfo<T1, T2> (Func<T1, T2> f, T1 unused1)
 		{
 			return f.Method;
@@ -74,6 +117,27 @@ namespace System.Data.Linq
 		{
 			return f.Method;
 		}
+	}
+
+	/// <summary>
+	/// Supports specifying the column assignments of <see cref="LinqToSqlExtensions.ExecuteUpdate{TSource}"/>.
+	/// This type exists only to be used within that method's expression tree; its members cannot be invoked directly.
+	/// </summary>
+	public sealed class SetPropertyCalls<TSource>
+	{
+		private SetPropertyCalls () { }
+
+		/// <summary>
+		/// Assigns the column selected by <paramref name="propertyExpression"/> a value computed from the row.
+		/// </summary>
+		public SetPropertyCalls<TSource> SetProperty<TProperty> (Func<TSource, TProperty> propertyExpression, Func<TSource, TProperty> valueExpression)
+			=> throw new InvalidOperationException("SetProperty can only be used within an ExecuteUpdate call.");
+
+		/// <summary>
+		/// Assigns the column selected by <paramref name="propertyExpression"/> a constant value.
+		/// </summary>
+		public SetPropertyCalls<TSource> SetProperty<TProperty> (Func<TSource, TProperty> propertyExpression, TProperty valueExpression)
+			=> throw new InvalidOperationException("SetProperty can only be used within an ExecuteUpdate call.");
 	}
 }
 	#endif

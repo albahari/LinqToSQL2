@@ -1029,6 +1029,21 @@ namespace System.Data.Linq
 				return SR.GetString("OrderedStringJoinNotSupported");
 			}
 		}
+		internal static string ExecuteDmlRequiresTableQuery(object p0)
+		{
+			return SR.GetString("ExecuteDmlRequiresTableQuery", p0);
+		}
+		internal static string ExecuteDmlUnsupportedQueryShape(object p0)
+		{
+			return SR.GetString("ExecuteDmlUnsupportedQueryShape", p0);
+		}
+		internal static string ExecuteUpdateInvalidSetters
+		{
+			get
+			{
+				return SR.GetString("ExecuteUpdateInvalidSetters");
+			}
+		}
 		internal static string CompiledQueryAgainstMultipleShapesNotSupported
 		{
 			get

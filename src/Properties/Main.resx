@@ -463,6 +463,9 @@
 	<data name="SequenceOperatorRequiresOrderedSequence" xml:space="preserve"><value>The query operator '{0}' requires an explicitly ordered sequence; apply OrderBy/OrderByDescending before it.</value></data>
 	<data name="SequenceOperatorCannotFollowPaging" xml:space="preserve"><value>The query operator '{0}' cannot be applied after Take, Skip or another row-limiting operation.</value></data>
 	<data name="OrderedStringJoinNotSupported" xml:space="preserve"><value>Explicitly ordering the elements of a string.Join aggregate (STRING_AGG ... WITHIN GROUP) is not supported; remove the OrderBy call.</value></data>
+	<data name="ExecuteDmlRequiresTableQuery" xml:space="preserve"><value>The query for '{0}' must select rows of a mapped table; projections and groupings are not supported.</value></data>
+	<data name="ExecuteDmlUnsupportedQueryShape" xml:space="preserve"><value>The query for '{0}' cannot include Take, Skip, Distinct, GroupBy or another row-limiting operation; only filtering is supported.</value></data>
+	<data name="ExecuteUpdateInvalidSetters" xml:space="preserve"><value>The setters argument of ExecuteUpdate must be a chain of SetProperty calls, each assigning a column of the target row.</value></data>
 	<data name="DistributedTransactionsAreNotAllowed" xml:space="preserve"><value>Distributed transactions are not allowed.</value></data>
 	<data name="UnrecognizedExpressionNode" xml:space="preserve"><value>Unrecognized expression node: {0}</value></data>
 	<data name="InvalidGroupByExpression" xml:space="preserve"><value>The group by operation contains an expression that cannot be translated.</value></data>

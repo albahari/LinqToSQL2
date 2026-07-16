@@ -1281,6 +1281,12 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				{
 					return ResultShape.Return;
 				}
+				else if(mce.Method.DeclaringType == typeof(LinqToSqlExtensions) &&
+					(mce.Method.Name == nameof(LinqToSqlExtensions.ExecuteDelete) || mce.Method.Name == nameof(LinqToSqlExtensions.ExecuteUpdate)))
+				{
+					// set-based DML: execute as a non-query returning the affected row count.
+					return ResultShape.Return;
+				}
 			}
 
 			if(isSingleton)

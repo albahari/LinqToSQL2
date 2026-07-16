@@ -650,6 +650,18 @@ namespace System.Data.Linq
 		{
 			return new NotSupportedException(Strings.OrderedStringJoinNotSupported);
 		}
+		internal static Exception ExecuteDmlRequiresTableQuery(object p0)
+		{
+			return new NotSupportedException(Strings.ExecuteDmlRequiresTableQuery(p0));
+		}
+		internal static Exception ExecuteDmlUnsupportedQueryShape(object p0)
+		{
+			return new NotSupportedException(Strings.ExecuteDmlUnsupportedQueryShape(p0));
+		}
+		internal static Exception ExecuteUpdateInvalidSetters()
+		{
+			return new NotSupportedException(Strings.ExecuteUpdateInvalidSetters);
+		}
 		internal static Exception CompiledQueryAgainstMultipleShapesNotSupported()
 		{
 			return new NotSupportedException(Strings.CompiledQueryAgainstMultipleShapesNotSupported);

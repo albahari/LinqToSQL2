@@ -2494,6 +2494,15 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 					if (!string.IsNullOrWhiteSpace(tag) && !QueryTags.Contains(tag)) QueryTags.Add(tag);
 					return Visit (mc.Arguments[0]);
 				}
+				// Translate LinqToSqlExtensions.ExecuteDelete / ExecuteUpdate into set-based DML statements.
+				if (mc.Method.DeclaringType == typeof(LinqToSqlExtensions) && mc.Method.Name == nameof(LinqToSqlExtensions.ExecuteDelete))
+				{
+					return this.VisitExecuteDelete(mc.Arguments[0]);
+				}
+				if (mc.Method.DeclaringType == typeof(LinqToSqlExtensions) && mc.Method.Name == nameof(LinqToSqlExtensions.ExecuteUpdate))
+				{
+					return this.VisitExecuteUpdate(mc.Arguments[0], this.GetLambda(mc.Arguments[1]));
+				}
 				// Translate string.Join over a server-side sequence into a STRING_AGG aggregate.
 				// (calls whose arguments are all client-side never get here: the funcletizer evaluates them locally,
 				// and params-array forms are excluded since STRING_AGG only applies to sets.)
@@ -3620,6 +3629,131 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 			{
 				_allowDeferred = saveAllowDeferred;
 			}
+		}
+
+		/// <summary>
+		/// Converts query.ExecuteDelete() into a set-based DELETE statement over the rows the query selects,
+		/// bypassing the change tracker.
+		/// </summary>
+		private SqlStatement VisitExecuteDelete(Expression sequence)
+		{
+			bool saveAllowDeferred = _allowDeferred;
+			_allowDeferred = false;
+			try
+			{
+				SqlSelect select = this.ConvertDmlQuery(sequence, "ExecuteDelete");
+				return new SqlDelete(select, _dominatingExpression);
+			}
+			finally
+			{
+				_allowDeferred = saveAllowDeferred;
+			}
+		}
+
+		/// <summary>
+		/// Converts query.ExecuteUpdate(s => s.SetProperty(...)...) into a set-based UPDATE statement over the
+		/// rows the query selects, bypassing the change tracker.
+		/// </summary>
+		private SqlStatement VisitExecuteUpdate(Expression sequence, LambdaExpression setters)
+		{
+			bool saveAllowDeferred = _allowDeferred;
+			_allowDeferred = false;
+			try
+			{
+				SqlSelect select = this.ConvertDmlQuery(sequence, "ExecuteUpdate");
+				SqlAliasRef rowRef = (SqlAliasRef)select.Selection;
+
+				// unwind the chain of SetProperty calls (the outermost call is the last setter)
+				List<MethodCallExpression> setterCalls = new List<MethodCallExpression>();
+				Expression node = setters.Body;
+				while(node != setters.Parameters[0])
+				{
+					MethodCallExpression call = node as MethodCallExpression;
+					if(call == null || call.Method.Name != "SetProperty" ||
+						!call.Method.DeclaringType.IsGenericType ||
+						call.Method.DeclaringType.GetGenericTypeDefinition() != typeof(SetPropertyCalls<>) ||
+						!this.IsLambda(call.Arguments[0]))
+					{
+						throw Error.ExecuteUpdateInvalidSetters();
+					}
+					setterCalls.Add(call);
+					node = call.Object;
+				}
+				if(setterCalls.Count == 0)
+				{
+					throw Error.ExecuteUpdateInvalidSetters();
+				}
+				setterCalls.Reverse();
+
+				List<SqlAssign> assignments = new List<SqlAssign>();
+				foreach(MethodCallExpression call in setterCalls)
+				{
+					LambdaExpression propertyLambda = this.GetLambda(call.Arguments[0]);
+					if(!(propertyLambda.Body is MemberExpression))
+					{
+						throw Error.ExecuteUpdateInvalidSetters();
+					}
+					_parameterExpressionToSqlExpression[propertyLambda.Parameters[0]] = rowRef;
+					SqlExpression lValue = this.VisitExpression(propertyLambda.Body);
+
+					SqlExpression rValue;
+					if(this.IsLambda(call.Arguments[1]))
+					{
+						// value computed from the row
+						LambdaExpression valueLambda = this.GetLambda(call.Arguments[1]);
+						_parameterExpressionToSqlExpression[valueLambda.Parameters[0]] = rowRef;
+						rValue = this.VisitExpression(valueLambda.Body);
+					}
+					else
+					{
+						// constant / captured value
+						rValue = this.VisitExpression(call.Arguments[1]);
+					}
+					assignments.Add(new SqlAssign(lValue, rValue, _dominatingExpression));
+				}
+
+				return new SqlUpdate(select, assignments, _dominatingExpression);
+			}
+			finally
+			{
+				_allowDeferred = saveAllowDeferred;
+			}
+		}
+
+		/// <summary>
+		/// Converts the source query of an ExecuteUpdate/ExecuteDelete call, validating that it selects mapped
+		/// table rows and contains no construct that would change which rows the statement affects (the DML
+		/// emitters honor only the FROM and WHERE of the select).
+		/// </summary>
+		private SqlSelect ConvertDmlQuery(Expression sequence, string operatorName)
+		{
+			Type rowType = TypeSystem.GetElementType(sequence.Type);
+			MetaTable metaTable = _services.Model.GetTable(rowType);
+			if(metaTable == null)
+			{
+				throw Error.ExecuteDmlRequiresTableQuery(operatorName);
+			}
+
+			// LockSelect normalizes the selection to an alias ref (e.g. for a bare table, whose selection is the
+			// entity construction); the wrapper select it may introduce is flattened by the optimization passes.
+			SqlSelect select = this.LockSelect(this.VisitSequence(sequence));
+			if(!(select.Selection is SqlAliasRef))
+			{
+				throw Error.ExecuteDmlRequiresTableQuery(operatorName);
+			}
+			for(SqlSelect current = select; current != null; )
+			{
+				if(current.Top != null || current.IsDistinct || current.GroupBy.Count > 0 ||
+					current.Row.Columns.Any(c => c.Expression is SqlRowNumber))
+				{
+					throw Error.ExecuteDmlUnsupportedQueryShape(operatorName);
+				}
+				// ordering is irrelevant to which rows are affected and cannot appear in a DML statement.
+				current.OrderBy.Clear();
+				SqlAlias alias = current.From as SqlAlias;
+				current = alias == null ? null : alias.Node as SqlSelect;
+			}
+			return select;
 		}
 
 
