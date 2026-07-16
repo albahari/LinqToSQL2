@@ -616,9 +616,60 @@ Expression.ArrayIndex(pa, Expression.Constant(i)),
 			return new SqlSelect(result, outerAlias, _dominatingExpression);
 		}
 
+		/// <summary>
+		/// Converts the LeftJoin operator (.NET 10) and, with the sides swapped by the caller, the RightJoin operator:
+		/// every row of the outer sequence is preserved, and the inner side yields null for unmatched outer rows.
+		/// Converted as outer CROSS APPLY (matching inner rows, or a single null row) - the same shape the classic
+		/// GroupJoin/SelectMany/DefaultIfEmpty pattern produces - which the SqlOuterApplyReducer subsequently
+		/// collapses into a LEFT OUTER JOIN.
+		/// </summary>
+		/// <param name="preservedParameterIndex">Index of the result selector parameter bound to the preserved (outer)
+		/// side: 0 for LeftJoin, 1 for RightJoin (where the caller passes the sequences and key selectors swapped).</param>
+		private SqlSelect VisitLeftJoin(Expression outerSequence, Expression innerSequence, LambdaExpression outerKeySelector, LambdaExpression innerKeySelector, LambdaExpression resultSelector, int preservedParameterIndex)
+		{
+			SqlSelect outerSelect = this.VisitSequence(outerSequence);
+			SqlSelect innerSelect = this.VisitSequence(innerSequence);
+
+			SqlAlias outerAlias = new SqlAlias(outerSelect);
+			SqlAliasRef outerRef = new SqlAliasRef(outerAlias);
+			SqlAlias innerAlias = new SqlAlias(innerSelect);
+			SqlAliasRef innerRef = new SqlAliasRef(innerAlias);
+
+			_parameterExpressionToSqlExpression[outerKeySelector.Parameters[0]] = outerRef;
+			SqlExpression outerKey = this.VisitExpression(outerKeySelector.Body);
+
+			_parameterExpressionToSqlExpression[innerKeySelector.Parameters[0]] = innerRef;
+			SqlExpression innerKey = this.VisitExpression(innerKeySelector.Body);
+
+			// the inner rows matching the current outer row, as in VisitGroupJoin...
+			SqlSelect matching = new SqlSelect(innerRef, innerAlias, _dominatingExpression);
+			matching.Where = _nodeFactory.Binary(SqlNodeType.EQ, outerKey, innerKey);
+
+			// ...defaulting to a single null row when there are no matches.
+			SqlSelect defaulted = this.WrapWithDefaultIfEmpty(matching);
+			SqlAlias defaultedAlias = new SqlAlias(defaulted);
+			SqlAliasRef defaultedRef = new SqlAliasRef(defaultedAlias);
+
+			SqlJoin join = new SqlJoin(SqlJoinType.CrossApply, outerAlias, defaultedAlias, null, _dominatingExpression);
+
+			_parameterExpressionToSqlExpression[resultSelector.Parameters[preservedParameterIndex]] = outerRef;
+			_parameterExpressionToSqlExpression[resultSelector.Parameters[1 - preservedParameterIndex]] = defaultedRef;
+			SqlExpression result = this.VisitExpression(resultSelector.Body);
+
+			return new SqlSelect(result, join, _dominatingExpression);
+		}
+
 		private SqlSelect VisitDefaultIfEmpty(Expression sequence)
 		{
-			SqlSelect select = this.VisitSequence(sequence);
+			return this.WrapWithDefaultIfEmpty(this.VisitSequence(sequence));
+		}
+
+		/// <summary>
+		/// Wraps the given select in the DefaultIfEmpty construct: a select which produces the rows of the given select,
+		/// or a single all-null row when the given select produces no rows.
+		/// </summary>
+		private SqlSelect WrapWithDefaultIfEmpty(SqlSelect select)
+		{
 			SqlAlias alias = new SqlAlias(select);
 			SqlAliasRef aliasRef = new SqlAliasRef(alias);
 
@@ -1680,8 +1731,65 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 		}
 
 		/// <summary>
+		/// Converts the ExceptBy / IntersectBy operators (.NET 6): filters the source rows on whether their key is
+		/// present in the given key sequence. Local key collections become an IN list, queryable key sources an
+		/// EXISTS subquery (mirroring VisitContains). Like Except/Intersect, the result is DISTINCT over whole rows;
+		/// this diverges from the BCL operators, which yield only the first element per distinct key.
+		/// </summary>
+		private SqlNode VisitExceptByOrIntersectBy(Expression source1, Expression keys, LambdaExpression keySelector, bool isExcept)
+		{
+			Type type = TypeSystem.GetElementType(source1.Type);
+			if(IsGrouping(type))
+			{
+				throw isExcept ? Error.ExceptNotSupportedForHierarchicalTypes() : Error.IntersectNotSupportedForHierarchicalTypes();
+			}
+
+			SqlSelect select1 = this.LockSelect(this.VisitSequence(source1));
+			SqlAlias alias1 = new SqlAlias(select1);
+			SqlAliasRef aref1 = new SqlAliasRef(alias1);
+
+			_parameterExpressionToSqlExpression[keySelector.Parameters[0]] = aref1;
+			SqlExpression key = this.VisitExpression(keySelector.Body);
+
+			SqlExpression membership = null;
+			SqlNode seqNode = this.Visit(keys);
+			if(seqNode.NodeType == SqlNodeType.ClientArray)
+			{
+				membership = this.GenerateInExpression(key, ((SqlClientArray)seqNode).Expressions);
+			}
+			else if(seqNode.NodeType == SqlNodeType.Value)
+			{
+				IEnumerable values = ((SqlValue)seqNode).Value as IEnumerable;
+				IQueryable query = values as IQueryable;
+				if(query == null)
+				{
+					Type keyType = TypeSystem.GetElementType(keys.Type);
+					List<SqlExpression> list = values.OfType<object>().Select(v => _nodeFactory.ValueFromObject(v, keyType, true, _dominatingExpression)).ToList();
+					membership = this.GenerateInExpression(key, list);
+				}
+				else
+				{
+					seqNode = this.Visit(query.Expression);
+				}
+			}
+			if(membership == null)
+			{
+				SqlSelect select2 = this.CoerceToSequence(seqNode);
+				SqlAlias alias2 = new SqlAlias(select2);
+				SqlAliasRef aref2 = new SqlAliasRef(alias2);
+				membership = this.GenerateQuantifier(alias2, _nodeFactory.Binary(SqlNodeType.EQ2V, key, aref2), true);
+			}
+
+			SqlSelect result = new SqlSelect(aref1, alias1, select1.SourceExpression);
+			result.Where = isExcept ? _nodeFactory.Unary(SqlNodeType.Not, membership) : membership;
+			result.IsDistinct = true;
+			result.OrderingType = SqlOrderingType.Blocked;
+			return result;
+		}
+
+		/// <summary>
 		/// Returns true if the type is an IGrouping.
-		/// </summary>        
+		/// </summary>
 		[SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Unknown reason.")]
 		private bool IsGrouping(Type t)
 		{
@@ -2417,6 +2525,27 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							return this.VisitJoin(mc.Arguments[0], mc.Arguments[1], this.GetLambda(mc.Arguments[2]), this.GetLambda(mc.Arguments[3]), this.GetLambda(mc.Arguments[4]));
 						}
 						break;
+					case "LeftJoin":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 5 &&
+							this.IsLambda(mc.Arguments[2]) && this.GetLambda(mc.Arguments[2]).Parameters.Count == 1 &&
+							this.IsLambda(mc.Arguments[3]) && this.GetLambda(mc.Arguments[3]).Parameters.Count == 1 &&
+							this.IsLambda(mc.Arguments[4]) && this.GetLambda(mc.Arguments[4]).Parameters.Count == 2)
+						{
+							return this.VisitLeftJoin(mc.Arguments[0], mc.Arguments[1], this.GetLambda(mc.Arguments[2]), this.GetLambda(mc.Arguments[3]), this.GetLambda(mc.Arguments[4]), preservedParameterIndex: 0);
+						}
+						break;
+					case "RightJoin":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 5 &&
+							this.IsLambda(mc.Arguments[2]) && this.GetLambda(mc.Arguments[2]).Parameters.Count == 1 &&
+							this.IsLambda(mc.Arguments[3]) && this.GetLambda(mc.Arguments[3]).Parameters.Count == 1 &&
+							this.IsLambda(mc.Arguments[4]) && this.GetLambda(mc.Arguments[4]).Parameters.Count == 2)
+						{
+							// RightJoin preserves the inner sequence: convert it as a LeftJoin with the sides swapped.
+							return this.VisitLeftJoin(mc.Arguments[1], mc.Arguments[0], this.GetLambda(mc.Arguments[3]), this.GetLambda(mc.Arguments[2]), this.GetLambda(mc.Arguments[4]), preservedParameterIndex: 1);
+						}
+						break;
 					case "GroupJoin":
 						isSupportedSequenceOperator = true;
 						if(mc.Arguments.Count == 5 &&
@@ -2484,6 +2613,28 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							return this.VisitFirst(mc.Arguments[0], this.GetLambda(mc.Arguments[1]), false);
 						}
 						break;
+					case "MinBy":
+					case "MaxBy":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 2 &&
+							this.IsLambda(mc.Arguments[1]) && this.GetLambda(mc.Arguments[1]).Parameters.Count == 1)
+						{
+							// seq.MinBy(key) is converted as seq.OrderBy(key).FirstOrDefault(); MaxBy orders descending.
+							SqlSelect ordered = this.VisitOrderBy(mc.Arguments[0], this.GetLambda(mc.Arguments[1]),
+								mc.Method.Name == "MinBy" ? SqlOrderType.Ascending : SqlOrderType.Descending);
+							return this.GenerateFirst(this.LockSelect(ordered), true, mc.Arguments[0].Type);
+						}
+						break;
+					case "ElementAt":
+					case "ElementAtOrDefault":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 2 && mc.Arguments[1].Type == typeof(int))
+						{
+							// seq.ElementAt(n) is converted as seq.Skip(n).First() (FirstOrDefault for ElementAtOrDefault).
+							SqlSelect skipped = this.VisitSkip(mc.Arguments[0], mc.Arguments[1]);
+							return this.GenerateFirst(this.LockSelect(skipped), true, mc.Arguments[0].Type);
+						}
+						break;
 					case "Distinct":
 						isSupportedSequenceOperator = true;
 						if(mc.Arguments.Count == 1)
@@ -2517,6 +2668,22 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 						if(mc.Arguments.Count == 2)
 						{
 							return this.VisitExcept(mc.Arguments[0], mc.Arguments[1]);
+						}
+						break;
+					case "ExceptBy":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 3 &&
+							this.IsLambda(mc.Arguments[2]) && this.GetLambda(mc.Arguments[2]).Parameters.Count == 1)
+						{
+							return this.VisitExceptByOrIntersectBy(mc.Arguments[0], mc.Arguments[1], this.GetLambda(mc.Arguments[2]), true);
+						}
+						break;
+					case "IntersectBy":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 3 &&
+							this.IsLambda(mc.Arguments[2]) && this.GetLambda(mc.Arguments[2]).Parameters.Count == 1)
+						{
+							return this.VisitExceptByOrIntersectBy(mc.Arguments[0], mc.Arguments[1], this.GetLambda(mc.Arguments[2]), false);
 						}
 						break;
 					case "Any":
@@ -2654,6 +2821,17 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							return this.VisitOrderBy(mc.Arguments[0], this.GetLambda(mc.Arguments[1]), SqlOrderType.Descending);
 						}
 						break;
+					case "Order":
+					case "OrderDescending":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 1)
+						{
+							// seq.Order() is converted as seq.OrderBy(e => e) (analogous for OrderDescending).
+							ParameterExpression element = Expression.Parameter(TypeSystem.GetElementType(mc.Arguments[0].Type), "e");
+							return this.VisitOrderBy(mc.Arguments[0], Expression.Lambda(element, element),
+								mc.Method.Name == "Order" ? SqlOrderType.Ascending : SqlOrderType.Descending);
+						}
+						break;
 					case "ThenBy":
 						isSupportedSequenceOperator = true;
 						if(mc.Arguments.Count == 2 &&
@@ -2789,6 +2967,16 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 				_parameterExpressionToSqlExpression[lambda.Parameters[0]] = (SqlAliasRef)select.Selection;
 				select.Where = this.VisitExpression(lambda.Body);
 			}
+			return this.GenerateFirst(select, isFirst, sequence.Type);
+		}
+
+		/// <summary>
+		/// Applies TOP 1 (when isFirst is true) to the given select and packages it for the current context:
+		/// the select itself when it's the outermost node, otherwise a scalar/element subselect.
+		/// The caller is responsible for locking the select first (see LockSelect).
+		/// </summary>
+		private SqlNode GenerateFirst(SqlSelect select, bool isFirst, Type sequenceType)
+		{
 			if(isFirst)
 			{
 				select.Top = _nodeFactory.ValueFromObject(1, false, _dominatingExpression);
@@ -2798,7 +2986,7 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 				return select;
 			}
 			SqlNodeType subType = (_typeProvider.From(select.Selection.ClrType).CanBeColumn) ? SqlNodeType.ScalarSubSelect : SqlNodeType.Element;
-			SqlSubSelect elem = _nodeFactory.SubSelect(subType, select, sequence.Type);
+			SqlSubSelect elem = _nodeFactory.SubSelect(subType, select, sequenceType);
 			return elem;
 		}
 
