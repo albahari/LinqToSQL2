@@ -36,6 +36,9 @@ namespace System.Data.Linq.Provider.Common
 
 		// For query hints applied via LinqToSqlExtensions.WithQueryHints
 		public readonly List<string> QueryHints = new();
+
+		// For query tags applied via LinqToSqlExtensions.TagWith
+		public readonly List<string> QueryTags = new();
 		#endregion
 
 		#region Private classes
@@ -2202,6 +2205,112 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 			}
 		}
 
+		/// <summary>
+		/// Converts string.Join(separator, values) over a server-side sequence into a STRING_AGG aggregate,
+		/// mirroring the structure of VisitAggregate: pushed into the GROUP BY select when the sequence is a
+		/// grouping, otherwise a correlated scalar subquery.
+		/// NB: the order in which SQL Server concatenates the elements is arbitrary, whereas the BCL preserves
+		/// the sequence order.
+		/// </summary>
+		private SqlNode VisitStringJoin(Expression separator, Expression values)
+		{
+			SqlNode source = this.Visit(values);
+			SqlSelect select = this.CoerceToSequence(source);
+
+			// STRING_AGG ... WITHIN GROUP would be required to honor an explicit element ordering; that isn't
+			// supported, and silently discarding the ordering would be worse.
+			if(HasExplicitOrdering(select))
+			{
+				throw Error.OrderedStringJoinNotSupported();
+			}
+
+			SqlAlias alias = new SqlAlias(select);
+			SqlAliasRef aref = new SqlAliasRef(alias);
+
+			// If the sequence is of the form x.Select(expr), use the selection lambda for the aggregate directly
+			// (as VisitAggregate does).
+			LambdaExpression lambda = null;
+			MethodCallExpression mce = values as MethodCallExpression;
+			if((mce != null) && IsSequenceOperatorCall(mce, "Select") && select.From is SqlAlias)
+			{
+				LambdaExpression selectionLambda = GetLambda(mce.Arguments[1]);
+				lambda = Expression.Lambda(selectionLambda.Type, selectionLambda.Body, selectionLambda.Parameters);
+
+				alias = (SqlAlias)select.From;
+				aref = new SqlAliasRef(alias);
+			}
+			if(lambda != null)
+			{
+				_parameterExpressionToSqlExpression[lambda.Parameters[0]] = aref;
+			}
+
+			SqlExpression sep = this.VisitExpression(separator);
+
+			// Look to optimize the aggregate by pushing its evaluation down to the select node that has the
+			// actual group-by operator, as VisitAggregate does.
+			GroupInfo info = this.FindGroupInfo(source);
+			if(info != null)
+			{
+				SqlExpression exp;
+				if(lambda != null)
+				{
+					// evaluate expression relative to the group-by select node
+					_parameterExpressionToSqlExpression[lambda.Parameters[0]] = (SqlExpression)SqlDuplicator.Copy(info.ElementOnGroupSource);
+					exp = this.VisitExpression(lambda.Body);
+				}
+				else
+				{
+					exp = info.ElementOnGroupSource;
+				}
+				SqlExpression agg = this.GetStringAgg(exp, sep);
+				SqlColumn c = new SqlColumn(agg.ClrType, agg.SqlType, null, null, agg, _dominatingExpression);
+				info.SelectWithGroup.Row.Columns.Add(c);
+				return new SqlColumnRef(c);
+			}
+
+			// Otherwise generate a nested aggregate in a correlated subquery: SCALAR(SELECT STRING_AGG(exp) FROM seq).
+			// The COALESCE covers the empty-sequence case, for which the BCL yields an empty string.
+			SqlExpression elem = (lambda != null) ? this.VisitExpression(lambda.Body) : aref;
+			SqlSelect sel = new SqlSelect(this.GetStringAgg(elem, sep), alias, _dominatingExpression);
+			return _nodeFactory.Binary(SqlNodeType.Coalesce,
+				_nodeFactory.SubSelect(SqlNodeType.ScalarSubSelect, sel),
+				_nodeFactory.ValueFromObject("", false, _dominatingExpression));
+		}
+
+		/// <summary>
+		/// Builds STRING_AGG(COALESCE(elem, ''), separator), converting non-string elements to strings first.
+		/// The COALESCE mirrors string.Join semantics, which treat null elements as empty strings (STRING_AGG
+		/// would skip them entirely).
+		/// </summary>
+		private SqlExpression GetStringAgg(SqlExpression elem, SqlExpression separator)
+		{
+			// in case this contains another aggregate
+			elem = new SqlSimpleExpression(elem);
+			if(elem.ClrType != typeof(string))
+			{
+				elem = _nodeFactory.ConvertTo(typeof(string), elem);
+			}
+			elem = _nodeFactory.Binary(SqlNodeType.Coalesce, elem, _nodeFactory.ValueFromObject("", false, _dominatingExpression));
+			return _nodeFactory.FunctionCall(typeof(string), "STRING_AGG", new SqlExpression[] { elem, separator }, _dominatingExpression);
+		}
+
+		/// <summary>
+		/// Returns true if the given select carries an explicit ordering, descending through wrapper selects.
+		/// </summary>
+		private static bool HasExplicitOrdering(SqlSelect select)
+		{
+			for(SqlSelect current = select; current != null; )
+			{
+				if(current.OrderBy.Count > 0)
+				{
+					return true;
+				}
+				SqlAlias alias = current.From as SqlAlias;
+				current = alias == null ? null : alias.Node as SqlSelect;
+			}
+			return false;
+		}
+
 		private GroupInfo FindGroupInfo(SqlNode source)
 		{
 			GroupInfo info = null;
@@ -2377,6 +2486,22 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 					if (hints != null) hints = hints.Where(h => !string.IsNullOrWhiteSpace(h)).ToArray();
 					if (hints != null && hints.Any()) QueryHints.AddRange (hints);
 					return Visit (mc.Arguments[0]);
+				}
+				// Strip any calls to LinqToSqlExtensions.TagWith, collecting the tags into the QueryTags list.
+				if (mc.Method.DeclaringType == typeof(LinqToSqlExtensions) && mc.Method.Name == nameof(LinqToSqlExtensions.TagWith))
+				{
+					var tag = (mc.Arguments[1] as ConstantExpression)?.Value as string;
+					if (!string.IsNullOrWhiteSpace(tag) && !QueryTags.Contains(tag)) QueryTags.Add(tag);
+					return Visit (mc.Arguments[0]);
+				}
+				// Translate string.Join over a server-side sequence into a STRING_AGG aggregate.
+				// (calls whose arguments are all client-side never get here: the funcletizer evaluates them locally,
+				// and params-array forms are excluded since STRING_AGG only applies to sets.)
+				if(declType == typeof(string) && mc.Method.Name == "Join" && mc.Arguments.Count == 2 &&
+					!(mc.Arguments[1] is NewArrayExpression) && mc.Arguments[1].Type != typeof(string) &&
+					typeof(IEnumerable).IsAssignableFrom(mc.Arguments[1].Type))
+				{
+					return this.VisitStringJoin(mc.Arguments[0], mc.Arguments[1]);
 				}
 				if(this.IsSequenceOperatorCall(mc))
 				{

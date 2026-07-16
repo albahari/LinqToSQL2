@@ -467,6 +467,197 @@ namespace ReadWriteTests.SqlServer
 		}
 
 
+		[Test]
+		public void TagWithEmitsLeadingComment()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.TagWith("Fetch products").Where(p => p.ListPrice > 0);
+
+				StringAssert.StartsWith("-- Fetch products", ctx.GetCommand(query).CommandText);
+				CollectionAssert.IsNotEmpty(query.ToList());
+			}
+		}
+
+
+		[Test]
+		public void TagWithAccumulatesMultipleTags()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.TagWith("first tag").Where(p => p.ListPrice > 0).TagWith("second tag");
+				string sql = ctx.GetCommand(query).CommandText;
+
+				StringAssert.Contains("-- first tag", sql);
+				StringAssert.Contains("-- second tag", sql);
+			}
+		}
+
+
+		[Test]
+		public void TagWithPrefixesEveryLineOfMultilineTag()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.TagWith("line one\nline two");
+				string sql = ctx.GetCommand(query).CommandText;
+
+				StringAssert.Contains("-- line one", sql);
+				StringAssert.Contains("-- line two", sql);
+				Assert.IsFalse(sql.Split("\r\n").Any(l => l.StartsWith("line")), "Every tag line must be commented out");
+			}
+		}
+
+
+		[Test]
+		public void StringJoinOverGroupTranslatesToStringAgg()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.GroupBy(p => p.Color)
+									    .Select(g => new { g.Key, Names = string.Join("|", g.Select(x => x.Name)) });
+
+				StringAssert.Contains("STRING_AGG", ctx.GetCommand(query).CommandText);
+
+				var actual = query.ToList();
+				var expected = ctx.Products.Select(p => new { p.Color, p.Name }).ToList()
+										   .GroupBy(x => x.Color)
+										   .ToDictionary(g => g.Key ?? "<null>", g => g.Select(x => x.Name).OrderBy(n => n).ToList());
+
+				Assert.AreEqual(expected.Count, actual.Count);
+				foreach(var row in actual)
+				{
+					// SQL concatenates in arbitrary order, so compare as sorted sets.
+					CollectionAssert.AreEqual(expected[row.Key ?? "<null>"], row.Names.Split('|').OrderBy(n => n).ToList());
+				}
+			}
+		}
+
+
+		[Test]
+		public void StringJoinOverGroupWithElementSelector()
+		{
+			using(var ctx = GetContext())
+			{
+				// exercises the raw-grouping path (no Select inside the aggregate).
+				var actual = ctx.Products.GroupBy(p => p.Color, p => p.Name)
+										 .Select(g => new { g.Key, Names = string.Join("|", g) })
+										 .ToList();
+
+				var expected = ctx.Products.Select(p => new { p.Color, p.Name }).ToList()
+										   .GroupBy(x => x.Color)
+										   .ToDictionary(g => g.Key ?? "<null>", g => g.Select(x => x.Name).OrderBy(n => n).ToList());
+
+				Assert.AreEqual(expected.Count, actual.Count);
+				foreach(var row in actual)
+				{
+					CollectionAssert.AreEqual(expected[row.Key ?? "<null>"], row.Names.Split('|').OrderBy(n => n).ToList());
+				}
+			}
+		}
+
+
+		[Test]
+		public void StringJoinTreatsNullElementsAsEmptyStrings()
+		{
+			using(var ctx = GetContext())
+			{
+				// Color is null for many products: string.Join renders those as empty strings.
+				var actual = ctx.Products.GroupBy(p => p.ProductSubcategoryId)
+										 .Select(g => new { g.Key, Colors = string.Join("|", g.Select(x => x.Color)) })
+										 .ToList();
+
+				var expected = ctx.Products.Select(p => new { p.ProductSubcategoryId, p.Color }).ToList()
+										   .GroupBy(x => x.ProductSubcategoryId)
+										   .ToDictionary(g => g.Key?.ToString() ?? "<null>",
+													     g => g.Select(x => x.Color ?? "").OrderBy(c => c).ToList());
+
+				Assert.AreEqual(expected.Count, actual.Count);
+				foreach(var row in actual)
+				{
+					CollectionAssert.AreEqual(expected[row.Key?.ToString() ?? "<null>"], row.Colors.Split('|').OrderBy(c => c).ToList());
+				}
+			}
+		}
+
+
+		[Test]
+		public void StringJoinOverRelatedEntitiesUsesCorrelatedSubquery()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.ProductSubcategories
+								.Select(sc => new { sc.Name, Products = string.Join("|", sc.Products.Select(p => p.Name)) })
+								.ToList();
+
+				var expected = ctx.Products.Where(p => p.ProductSubcategoryId != null)
+										   .Select(p => new { p.ProductSubcategoryId, p.Name }).ToList()
+										   .GroupBy(x => x.ProductSubcategoryId.Value)
+										   .ToDictionary(g => g.Key, g => g.Select(x => x.Name).OrderBy(n => n).ToList());
+				var subcategoryNames = ctx.ProductSubcategories
+										  .Select(sc => new { sc.ProductSubcategoryId, sc.Name }).ToList()
+										  .ToDictionary(x => x.Name, x => x.ProductSubcategoryId);
+
+				CollectionAssert.IsNotEmpty(actual);
+				foreach(var row in actual)
+				{
+					CollectionAssert.AreEqual(expected[subcategoryNames[row.Name]], row.Products.Split('|').OrderBy(n => n).ToList());
+				}
+			}
+		}
+
+
+		[Test]
+		public void StringJoinOverEmptySequenceYieldsEmptyString()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.ProductSubcategories
+								.Select(sc => string.Join("|", sc.Products.Where(p => p.ProductId < 0).Select(p => p.Name)))
+								.ToList();
+
+				CollectionAssert.IsNotEmpty(actual);
+				Assert.IsTrue(actual.All(s => s == ""), "string.Join over an empty sequence must yield an empty string");
+			}
+		}
+
+
+		[Test]
+		public void StringJoinWithNonStringElementsAndCharSeparator()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.GroupBy(p => p.Color)
+										 .Select(g => new { g.Key, Ids = string.Join('|', g.Select(x => x.ProductId)) })
+										 .ToList();
+
+				var expected = ctx.Products.Select(p => new { p.Color, p.ProductId }).ToList()
+										   .GroupBy(x => x.Color)
+										   .ToDictionary(g => g.Key ?? "<null>",
+													     g => g.Select(x => x.ProductId.ToString()).OrderBy(i => i).ToList());
+
+				Assert.AreEqual(expected.Count, actual.Count);
+				foreach(var row in actual)
+				{
+					CollectionAssert.AreEqual(expected[row.Key ?? "<null>"], row.Ids.Split('|').OrderBy(i => i).ToList());
+				}
+			}
+		}
+
+
+		[Test]
+		public void StringJoinWithOrderedElementsThrows()
+		{
+			using(var ctx = GetContext())
+			{
+				Assert.Throws<NotSupportedException>(() =>
+					ctx.Products.GroupBy(p => p.Color)
+								.Select(g => string.Join("|", g.OrderBy(x => x.Name).Select(x => x.Name)))
+								.ToList());
+			}
+		}
+
+
 		private AdventureWorks2008DataContext GetContext()
 		{
 			if(_mappingSourceFromXmlFile == null)

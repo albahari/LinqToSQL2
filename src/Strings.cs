@@ -1022,6 +1022,13 @@ namespace System.Data.Linq
 		{
 			return SR.GetString("SequenceOperatorCannotFollowPaging", p0);
 		}
+		internal static string OrderedStringJoinNotSupported
+		{
+			get
+			{
+				return SR.GetString("OrderedStringJoinNotSupported");
+			}
+		}
 		internal static string CompiledQueryAgainstMultipleShapesNotSupported
 		{
 			get

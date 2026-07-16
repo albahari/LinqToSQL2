@@ -1343,11 +1343,11 @@ namespace System.Data.Linq.DbEngines.SqlServer
 			}
 			SqlNode node = converter.ConvertOuter(query);
 
-			return this.BuildQuery(this.GetResultShape(query), this.GetResultType(query), node, null, annotations, converter.QueryHints);
+			return this.BuildQuery(this.GetResultShape(query), this.GetResultType(query), node, null, annotations, converter.QueryHints, converter.QueryTags);
 		}
 
 		[SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling", Justification = "These issues are related to our use of if-then and case statements for node types, which adds to the complexity count however when reviewed they are easy to navigate and understand.")]
-		private QueryInfo[] BuildQuery(ResultShape resultShape, Type resultType, SqlNode node, ReadOnlyCollection<System.Data.Linq.Provider.NodeTypes.SqlParameter> parentParameters, SqlNodeAnnotations annotations, IList<string> queryHints = null)
+		private QueryInfo[] BuildQuery(ResultShape resultShape, Type resultType, SqlNode node, ReadOnlyCollection<System.Data.Linq.Provider.NodeTypes.SqlParameter> parentParameters, SqlNodeAnnotations annotations, IList<string> queryHints = null, IList<string> queryTags = null)
 		{
 			System.Diagnostics.Debug.Assert(resultType != null);
 			System.Diagnostics.Debug.Assert(node != null);
@@ -1548,6 +1548,10 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				// Gather any query hints and combine into an OPTION () clause.
 				if (queryHints != null && queryHints.Any())
 					commandText += "\r\nOPTION (" + string.Join (", ", queryHints.Distinct (StringComparer.OrdinalIgnoreCase)) + ")";
+
+				// Prepend any query tags (applied via TagWith) as leading SQL comments.
+				if (queryTags != null && queryTags.Any())
+					commandText = string.Concat (queryTags.SelectMany (t => t.Split ('\n')).Select (l => "-- " + l.TrimEnd ('\r') + "\r\n")) + "\r\n" + commandText;
 
 				return new QueryInfo[] {
                     new QueryInfo(node, commandText, parameters, resultShape, resultType)

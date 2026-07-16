@@ -166,6 +166,7 @@ namespace System.Data.Linq
 		internal const string VectorDistanceRequiresVectorColumn = "VectorDistanceRequiresVectorColumn";
 		internal const string SequenceOperatorRequiresOrderedSequence = "SequenceOperatorRequiresOrderedSequence";
 		internal const string SequenceOperatorCannotFollowPaging = "SequenceOperatorCannotFollowPaging";
+		internal const string OrderedStringJoinNotSupported = "OrderedStringJoinNotSupported";
 		internal const string NonConstantExpressionsNotSupportedForRounding = "NonConstantExpressionsNotSupportedForRounding";
 		internal const string CompiledQueryAgainstMultipleShapesNotSupported = "CompiledQueryAgainstMultipleShapesNotSupported";
 		internal const string LenOfTextOrNTextNotSupported = "LenOfTextOrNTextNotSupported";

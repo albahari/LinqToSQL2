@@ -646,6 +646,10 @@ namespace System.Data.Linq
 		{
 			return new NotSupportedException(Strings.SequenceOperatorCannotFollowPaging(p0));
 		}
+		internal static Exception OrderedStringJoinNotSupported()
+		{
+			return new NotSupportedException(Strings.OrderedStringJoinNotSupported);
+		}
 		internal static Exception CompiledQueryAgainstMultipleShapesNotSupported()
 		{
 			return new NotSupportedException(Strings.CompiledQueryAgainstMultipleShapesNotSupported);

@@ -45,6 +45,26 @@ namespace System.Data.Linq
 		public static IQueryable<TSource> WithoutParameterSniffing<TSource> (this IQueryable<TSource> source)
 			=> WithQueryHints(source, "OPTIMIZE FOR UNKNOWN");
 
+		/// <summary>
+		/// Annotates the query with the given tag, which is emitted as a leading SQL comment. This makes the query
+		/// easy to identify in SQL Profiler, Query Store and other database tooling. Multiple tags accumulate.
+		/// </summary>
+		public static IQueryable<TSource> TagWith<TSource> (this IQueryable<TSource> source, string tag)
+		{
+			if (source == null)
+				throw Error.ArgumentNull("source");
+
+			if (string.IsNullOrWhiteSpace(tag))
+				return source;
+
+			return source.Provider.CreateQuery<TSource>(
+				Expression.Call(
+					null,
+					GetMethodInfo(TagWith, source, tag),
+					new Expression[] { source.Expression, Expression.Constant(tag) }
+					));
+		}
+
 		private static MethodInfo GetMethodInfo<T1, T2> (Func<T1, T2> f, T1 unused1)
 		{
 			return f.Method;

@@ -462,6 +462,7 @@
 	<data name="VectorDistanceRequiresVectorColumn" xml:space="preserve"><value>At least one argument to VectorDistance must be a column mapped to a vector type (the server requires an explicit vector dimension, which is inferred from the column).</value></data>
 	<data name="SequenceOperatorRequiresOrderedSequence" xml:space="preserve"><value>The query operator '{0}' requires an explicitly ordered sequence; apply OrderBy/OrderByDescending before it.</value></data>
 	<data name="SequenceOperatorCannotFollowPaging" xml:space="preserve"><value>The query operator '{0}' cannot be applied after Take, Skip or another row-limiting operation.</value></data>
+	<data name="OrderedStringJoinNotSupported" xml:space="preserve"><value>Explicitly ordering the elements of a string.Join aggregate (STRING_AGG ... WITHIN GROUP) is not supported; remove the OrderBy call.</value></data>
 	<data name="DistributedTransactionsAreNotAllowed" xml:space="preserve"><value>Distributed transactions are not allowed.</value></data>
 	<data name="UnrecognizedExpressionNode" xml:space="preserve"><value>Unrecognized expression node: {0}</value></data>
 	<data name="InvalidGroupByExpression" xml:space="preserve"><value>The group by operation contains an expression that cannot be translated.</value></data>
