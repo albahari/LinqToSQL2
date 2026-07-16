@@ -1073,12 +1073,14 @@ namespace System.Data.Linq.DbEngines.SqlServer
 											sequenceMethod = TypeSystem.FindSequenceMethod(mce.Method.Name, sequence);
 											break;
 										case "ElementAt":
-											// converted as Skip(n).First(); an empty result means the index was out of range.
+										case "Last":
+											// converted as (inverted-order) TOP 1 queries which throw on an empty result.
 											sequenceMethod = TypeSystem.FindSequenceMethod("First", sequence);
 											break;
 										case "MinBy":
 										case "MaxBy":
 										case "ElementAtOrDefault":
+										case "LastOrDefault":
 											// converted as TOP 1 queries which produce no rows for an empty source.
 											sequenceMethod = TypeSystem.FindSequenceMethod("FirstOrDefault", sequence);
 											break;
@@ -1247,6 +1249,8 @@ namespace System.Data.Linq.DbEngines.SqlServer
 						case "MaxBy":
 						case "ElementAt":
 						case "ElementAtOrDefault":
+						case "Last":
+						case "LastOrDefault":
 							isSingleton = true;
 							break;
 					}

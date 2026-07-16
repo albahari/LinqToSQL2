@@ -638,6 +638,14 @@ namespace System.Data.Linq
 		{
 			return new NotSupportedException(Strings.VectorDistanceRequiresVectorColumn);
 		}
+		internal static Exception SequenceOperatorRequiresOrderedSequence(object p0)
+		{
+			return new NotSupportedException(Strings.SequenceOperatorRequiresOrderedSequence(p0));
+		}
+		internal static Exception SequenceOperatorCannotFollowPaging(object p0)
+		{
+			return new NotSupportedException(Strings.SequenceOperatorCannotFollowPaging(p0));
+		}
 		internal static Exception CompiledQueryAgainstMultipleShapesNotSupported()
 		{
 			return new NotSupportedException(Strings.CompiledQueryAgainstMultipleShapesNotSupported);

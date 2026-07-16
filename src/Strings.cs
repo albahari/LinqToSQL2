@@ -1014,6 +1014,14 @@ namespace System.Data.Linq
 				return SR.GetString("VectorDistanceRequiresVectorColumn");
 			}
 		}
+		internal static string SequenceOperatorRequiresOrderedSequence(object p0)
+		{
+			return SR.GetString("SequenceOperatorRequiresOrderedSequence", p0);
+		}
+		internal static string SequenceOperatorCannotFollowPaging(object p0)
+		{
+			return SR.GetString("SequenceOperatorCannotFollowPaging", p0);
+		}
 		internal static string CompiledQueryAgainstMultipleShapesNotSupported
 		{
 			get

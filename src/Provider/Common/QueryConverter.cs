@@ -697,6 +697,125 @@ Expression.ArrayIndex(pa, Expression.Constant(i)),
 		}
 
 		/// <summary>
+		/// Converts the DistinctBy operator (.NET 6) by rewriting seq.DistinctBy(key) as
+		/// seq.GroupBy(key).Select(g => g.First()).
+		/// NB: which row is returned per key is arbitrary (SQL gives no guarantee), whereas the BCL operator
+		/// yields the first element per key.
+		/// </summary>
+		private SqlNode VisitDistinctBy(Expression sequence, LambdaExpression keySelector)
+		{
+			Type elementType = TypeSystem.GetElementType(sequence.Type);
+			Type keyType = keySelector.Body.Type;
+			Type groupingType = typeof(IGrouping<,>).MakeGenericType(keyType, elementType);
+			ParameterExpression g = Expression.Parameter(groupingType, "g");
+			return this.Visit(Expression.Call(
+				typeof(Enumerable), "Select",
+				new Type[] { groupingType, elementType },
+				Expression.Call(typeof(Enumerable), "GroupBy", new Type[] { elementType, keyType }, sequence, keySelector),
+				Expression.Lambda(Expression.Call(typeof(Enumerable), "First", new Type[] { elementType }, g), g)));
+		}
+
+		/// <summary>
+		/// Converts the CountBy operator (.NET 9) by rewriting seq.CountBy(key) as
+		/// seq.GroupBy(key).Select(g => new KeyValuePair&lt;TKey, int&gt;(g.Key, g.Count())).
+		/// </summary>
+		private SqlNode VisitCountBy(Expression sequence, LambdaExpression keySelector)
+		{
+			Type elementType = TypeSystem.GetElementType(sequence.Type);
+			Type keyType = keySelector.Body.Type;
+			Type groupingType = typeof(IGrouping<,>).MakeGenericType(keyType, elementType);
+			Type resultType = typeof(KeyValuePair<,>).MakeGenericType(keyType, typeof(int));
+			ParameterExpression g = Expression.Parameter(groupingType, "g");
+			Expression kvp = Expression.New(
+				resultType.GetConstructor(new Type[] { keyType, typeof(int) }),
+				new Expression[]
+				{
+					Expression.Property(g, "Key"),
+					Expression.Call(typeof(Enumerable), "Count", new Type[] { elementType }, g)
+				},
+				resultType.GetProperty("Key"), resultType.GetProperty("Value"));
+			return this.Visit(Expression.Call(
+				typeof(Enumerable), "Select",
+				new Type[] { groupingType, resultType },
+				Expression.Call(typeof(Enumerable), "GroupBy", new Type[] { elementType, keyType }, sequence, keySelector),
+				Expression.Lambda(kvp, g)));
+		}
+
+		/// <summary>
+		/// Converts the Shuffle operator (.NET 10): orders the rows randomly, server-side, via ORDER BY NEWID().
+		/// </summary>
+		private SqlSelect VisitShuffle(Expression sequence)
+		{
+			SqlSelect select = this.LockSelect(this.VisitSequence(sequence));
+
+			if(select.Selection.NodeType != SqlNodeType.AliasRef || select.OrderBy.Count > 0)
+			{
+				SqlAlias alias = new SqlAlias(select);
+				SqlAliasRef aref = new SqlAliasRef(alias);
+				select = new SqlSelect(aref, alias, _dominatingExpression);
+			}
+
+			select.OrderBy.Add(new SqlOrderExpression(SqlOrderType.Ascending,
+				_nodeFactory.FunctionCall(typeof(Guid), "NEWID", new SqlExpression[0], _dominatingExpression)));
+			return select;
+		}
+
+		/// <summary>
+		/// Converts Last/LastOrDefault by inverting the sequence's ordering and taking the first row.
+		/// </summary>
+		private SqlNode VisitLast(Expression sequence, LambdaExpression lambda, string operatorName)
+		{
+			SqlSelect select = this.VisitSequence(sequence);
+			this.InvertOrderings(select, operatorName);
+			select = this.LockSelect(select);
+			if(lambda != null)
+			{
+				_parameterExpressionToSqlExpression[lambda.Parameters[0]] = (SqlAliasRef)select.Selection;
+				select.Where = this.VisitExpression(lambda.Body);
+			}
+			return this.GenerateFirst(select, true, sequence.Type);
+		}
+
+		/// <summary>
+		/// Inverts the ordering (ascending &lt;-&gt; descending) which determines the row order of the given select,
+		/// descending through wrapper selects to locate it. Used to convert Last/LastOrDefault/Reverse.
+		/// Throws when the sequence has no explicit ordering, or when the ordering sits below a TOP / row-numbering
+		/// construct (inverting it there would change which rows the query returns rather than just their order).
+		/// </summary>
+		private void InvertOrderings(SqlSelect select, string operatorName)
+		{
+			SqlSelect current = select;
+			while(true)
+			{
+				if(current.Top != null || current.Row.Columns.Any(c => c.Expression is SqlRowNumber))
+				{
+					throw Error.SequenceOperatorCannotFollowPaging(operatorName);
+				}
+				if(current.OrderBy.Count > 0)
+				{
+					foreach(SqlOrderExpression oe in current.OrderBy)
+					{
+						oe.OrderType = oe.OrderType == SqlOrderType.Ascending ? SqlOrderType.Descending : SqlOrderType.Ascending;
+					}
+					return;
+				}
+				if(current.IsDistinct || current.GroupBy.Count > 0 || current.OrderingType == SqlOrderingType.Blocked)
+				{
+					// these constructs discard any incoming row order, so an ordering below them doesn't count.
+					break;
+				}
+				SqlAlias alias = current.From as SqlAlias;
+				SqlSelect inner = alias == null ? null : alias.Node as SqlSelect;
+				if(inner == null)
+				{
+					break;
+				}
+				current = inner;
+			}
+			throw Error.SequenceOperatorRequiresOrderedSequence(operatorName);
+		}
+
+		/// <summary>
 		/// Rewrite seq.OfType<T> as seq.Select(s=>s as T).Where(p=>p!=null).
 		/// </summary>
 		private SqlSelect VisitOfType(Expression sequence, Type ofType)
@@ -2613,6 +2732,19 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							return this.VisitFirst(mc.Arguments[0], this.GetLambda(mc.Arguments[1]), false);
 						}
 						break;
+					case "Last":
+					case "LastOrDefault":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 1)
+						{
+							return this.VisitLast(mc.Arguments[0], null, mc.Method.Name);
+						}
+						else if(mc.Arguments.Count == 2 &&
+							this.IsLambda(mc.Arguments[1]) && this.GetLambda(mc.Arguments[1]).Parameters.Count == 1)
+						{
+							return this.VisitLast(mc.Arguments[0], this.GetLambda(mc.Arguments[1]), mc.Method.Name);
+						}
+						break;
 					case "MinBy":
 					case "MaxBy":
 						isSupportedSequenceOperator = true;
@@ -2642,6 +2774,14 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							return this.VisitDistinct(mc.Arguments[0]);
 						}
 						break;
+					case "DistinctBy":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 2 &&
+							this.IsLambda(mc.Arguments[1]) && this.GetLambda(mc.Arguments[1]).Parameters.Count == 1)
+						{
+							return this.VisitDistinctBy(mc.Arguments[0], this.GetLambda(mc.Arguments[1]));
+						}
+						break;
 					case "Concat":
 						isSupportedSequenceOperator = true;
 						if(mc.Arguments.Count == 2)
@@ -2654,6 +2794,18 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 						if(mc.Arguments.Count == 2)
 						{
 							return this.VisitUnion(mc.Arguments[0], mc.Arguments[1]);
+						}
+						break;
+					case "UnionBy":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 3 &&
+							this.IsLambda(mc.Arguments[2]) && this.GetLambda(mc.Arguments[2]).Parameters.Count == 1)
+						{
+							// first.UnionBy(second, key) is converted as first.Concat(second).DistinctBy(key).
+							Type unionElementType = TypeSystem.GetElementType(mc.Arguments[0].Type);
+							return this.VisitDistinctBy(
+								Expression.Call(typeof(Enumerable), "Concat", new Type[] { unionElementType }, mc.Arguments[0], mc.Arguments[1]),
+								this.GetLambda(mc.Arguments[2]));
 						}
 						break;
 					case "Intersect":
@@ -2728,6 +2880,17 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							this.IsLambda(mc.Arguments[1]) && this.GetLambda(mc.Arguments[1]).Parameters.Count == 1)
 						{
 							return this.VisitAggregate(mc.Arguments[0], this.GetLambda(mc.Arguments[1]), SqlNodeType.LongCount, mc.Type);
+						}
+						break;
+					case "CountBy":
+						isSupportedSequenceOperator = true;
+						// CountBy has no comparer-less overload: its comparer parameter is optional, so the
+						// expression tree always carries it as a third argument (null unless explicitly given).
+						if((mc.Arguments.Count == 2 ||
+							(mc.Arguments.Count == 3 && mc.Arguments[2] is ConstantExpression countByComparer && countByComparer.Value == null)) &&
+							this.IsLambda(mc.Arguments[1]) && this.GetLambda(mc.Arguments[1]).Parameters.Count == 1)
+						{
+							return this.VisitCountBy(mc.Arguments[0], this.GetLambda(mc.Arguments[1]));
 						}
 						break;
 					case "Sum":
@@ -2830,6 +2993,22 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 							ParameterExpression element = Expression.Parameter(TypeSystem.GetElementType(mc.Arguments[0].Type), "e");
 							return this.VisitOrderBy(mc.Arguments[0], Expression.Lambda(element, element),
 								mc.Method.Name == "Order" ? SqlOrderType.Ascending : SqlOrderType.Descending);
+						}
+						break;
+					case "Shuffle":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 1)
+						{
+							return this.VisitShuffle(mc.Arguments[0]);
+						}
+						break;
+					case "Reverse":
+						isSupportedSequenceOperator = true;
+						if(mc.Arguments.Count == 1)
+						{
+							SqlSelect reversed = this.VisitSequence(mc.Arguments[0]);
+							this.InvertOrderings(reversed, mc.Method.Name);
+							return reversed;
 						}
 						break;
 					case "ThenBy":

@@ -267,6 +267,206 @@ namespace ReadWriteTests.SqlServer
 		}
 
 
+		[Test]
+		public void DistinctByReturnsOneRowPerKey()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.DistinctBy(p => p.Color).ToList();
+				var expectedKeys = ctx.Products.Select(p => p.Color).Distinct().ToList();
+
+				Assert.AreEqual(expectedKeys.Count, actual.Count);
+				CollectionAssert.AreEquivalent(expectedKeys, actual.Select(p => p.Color));
+			}
+		}
+
+
+		[Test]
+		public void DistinctByComposesWithCount()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.DistinctBy(p => p.Color).Count();
+				var expected = ctx.Products.Select(p => p.Color).Distinct().Count();
+
+				Assert.Greater(actual, 0);
+				Assert.AreEqual(expected, actual);
+			}
+		}
+
+
+		[Test]
+		public void UnionByYieldsOneRowPerKeyAcrossBothSequences()
+		{
+			using(var ctx = GetContext())
+			{
+				var first = ctx.Products.Where(p => p.ListPrice > 1000);
+				var second = ctx.Products.Where(p => p.ListPrice > 500);
+
+				var actual = first.UnionBy(second, p => p.Color).ToList();
+				var expectedKeys = first.Select(p => p.Color).Union(second.Select(p => p.Color)).ToList();
+
+				CollectionAssert.IsNotEmpty(actual);
+				CollectionAssert.AreEquivalent(expectedKeys, actual.Select(p => p.Color));
+			}
+		}
+
+
+		[Test]
+		public void CountByMatchesGroupByWithCount()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.CountBy(p => p.Color).ToList();
+				var expected = ctx.Products.GroupBy(p => p.Color).Select(g => new { g.Key, Count = g.Count() }).ToList();
+
+				CollectionAssert.IsNotEmpty(actual);
+				Assert.AreEqual(expected.Count, actual.Count);
+				foreach(var kvp in actual)
+				{
+					Assert.AreEqual(expected.Single(x => x.Key == kvp.Key).Count, kvp.Value);
+				}
+			}
+		}
+
+
+		[Test]
+		public void ShuffleReturnsAllRowsAndOrdersByNewid()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.Shuffle().Select(p => p.ProductId);
+
+				StringAssert.Contains("NEWID", ctx.GetCommand(query).CommandText);
+
+				var actual = query.ToList();
+				var expected = ctx.Products.Select(p => p.ProductId).ToList();
+				CollectionAssert.AreEquivalent(expected, actual);
+			}
+		}
+
+
+		[Test]
+		public void ShuffleComposesWithTake()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.Shuffle().Take(5).ToList();
+
+				Assert.AreEqual(5, actual.Count);
+				Assert.AreEqual(5, actual.Select(p => p.ProductId).Distinct().Count());
+			}
+		}
+
+
+		[Test]
+		public void LastReturnsFinalElementOfOrderedSequence()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.OrderBy(p => p.ProductId).Last();
+				var expected = ctx.Products.OrderByDescending(p => p.ProductId).First();
+
+				Assert.IsNotNull(actual);
+				Assert.AreEqual(expected.ProductId, actual.ProductId);
+			}
+		}
+
+
+		[Test]
+		public void LastWithPredicate()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.OrderBy(p => p.ProductId).Last(p => p.ListPrice > 100);
+				var expected = ctx.Products.OrderByDescending(p => p.ProductId).First(p => p.ListPrice > 100);
+
+				Assert.AreEqual(expected.ProductId, actual.ProductId);
+			}
+		}
+
+
+		[Test]
+		public void LastFindsOrderingBelowIntermediateOperators()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.OrderBy(p => p.Name).ThenBy(p => p.ProductId).Where(p => p.ListPrice > 100).Last();
+				var expected = ctx.Products.OrderByDescending(p => p.Name).ThenByDescending(p => p.ProductId).Where(p => p.ListPrice > 100).First();
+
+				Assert.AreEqual(expected.ProductId, actual.ProductId);
+			}
+		}
+
+
+		[Test]
+		public void LastOrDefaultOnEmptySourceReturnsNull()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.Where(p => p.ProductId < 0).OrderBy(p => p.ProductId).LastOrDefault();
+
+				Assert.IsNull(actual);
+			}
+		}
+
+
+		[Test]
+		public void LastWithoutOrderingThrows()
+		{
+			using(var ctx = GetContext())
+			{
+				Assert.Throws<NotSupportedException>(() => ctx.Products.Last());
+			}
+		}
+
+
+		[Test]
+		public void LastAfterTakeThrows()
+		{
+			using(var ctx = GetContext())
+			{
+				Assert.Throws<NotSupportedException>(() => ctx.Products.OrderBy(p => p.ProductId).Take(5).Last());
+			}
+		}
+
+
+		[Test]
+		public void LastAfterSkipThrows()
+		{
+			using(var ctx = GetContext())
+			{
+				Assert.Throws<NotSupportedException>(() => ctx.Products.OrderBy(p => p.ProductId).Skip(5).Last());
+			}
+		}
+
+
+		[Test]
+		public void ReverseInvertsOrdering()
+		{
+			using(var ctx = GetContext())
+			{
+				var actual = ctx.Products.OrderBy(p => p.Name).ThenBy(p => p.ProductId).Reverse()
+										 .Select(p => p.ProductId).ToList();
+				var expected = ctx.Products.OrderByDescending(p => p.Name).ThenByDescending(p => p.ProductId)
+										   .Select(p => p.ProductId).ToList();
+
+				CollectionAssert.IsNotEmpty(actual);
+				CollectionAssert.AreEqual(expected, actual);
+			}
+		}
+
+
+		[Test]
+		public void ReverseWithoutOrderingThrows()
+		{
+			using(var ctx = GetContext())
+			{
+				Assert.Throws<NotSupportedException>(() => ctx.Products.Reverse().ToList());
+			}
+		}
+
+
 		private AdventureWorks2008DataContext GetContext()
 		{
 			if(_mappingSourceFromXmlFile == null)
