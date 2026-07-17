@@ -2485,14 +2485,16 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 					var hints = (mc.Arguments[1] as ConstantExpression)?.Value as string[];
 					if (hints != null) hints = hints.Where(h => !string.IsNullOrWhiteSpace(h)).ToArray();
 					if (hints != null && hints.Any()) QueryHints.AddRange (hints);
-					return Visit (mc.Arguments[0]);
+					// VisitSequence rather than Visit, so that a bare table argument is coerced into a SELECT.
+					return this.VisitSequence (mc.Arguments[0]);
 				}
 				// Strip any calls to LinqToSqlExtensions.TagWith, collecting the tags into the QueryTags list.
 				if (mc.Method.DeclaringType == typeof(LinqToSqlExtensions) && mc.Method.Name == nameof(LinqToSqlExtensions.TagWith))
 				{
 					var tag = (mc.Arguments[1] as ConstantExpression)?.Value as string;
 					if (!string.IsNullOrWhiteSpace(tag) && !QueryTags.Contains(tag)) QueryTags.Add(tag);
-					return Visit (mc.Arguments[0]);
+					// VisitSequence rather than Visit, so that a bare table argument is coerced into a SELECT.
+					return this.VisitSequence (mc.Arguments[0]);
 				}
 				// Translate LinqToSqlExtensions.ExecuteDelete / ExecuteUpdate into set-based DML statements.
 				if (mc.Method.DeclaringType == typeof(LinqToSqlExtensions) && mc.Method.Name == nameof(LinqToSqlExtensions.ExecuteDelete))

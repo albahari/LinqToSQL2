@@ -495,6 +495,19 @@ namespace ReadWriteTests.SqlServer
 
 
 		[Test]
+		public void TagWithDirectlyOnTable()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.TagWith("test");
+
+				StringAssert.StartsWith("-- test", ctx.GetCommand(query).CommandText);
+				CollectionAssert.IsNotEmpty(query.ToList());
+			}
+		}
+
+
+		[Test]
 		public void TagWithPrefixesEveryLineOfMultilineTag()
 		{
 			using(var ctx = GetContext())
@@ -505,6 +518,35 @@ namespace ReadWriteTests.SqlServer
 				StringAssert.Contains("-- line one", sql);
 				StringAssert.Contains("-- line two", sql);
 				Assert.IsFalse(sql.Split("\r\n").Any(l => l.StartsWith("line")), "Every tag line must be commented out");
+			}
+		}
+
+
+		[Test]
+		public void TagWithCallSiteEmitsSourceLocation()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.TagWithCallSite().Where(p => p.ListPrice > 0);
+				string sql = ctx.GetCommand(query).CommandText;
+
+				StringAssert.StartsWith("-- File: ", sql);
+				StringAssert.Contains("ModernOperatorTests.cs:", sql);
+				CollectionAssert.IsNotEmpty(query.ToList());
+			}
+		}
+
+
+		[Test]
+		public void WithQueryHintsDirectlyOnTable()
+		{
+			using(var ctx = GetContext())
+			{
+				var query = ctx.Products.WithQueryHints("OPTIMIZE FOR UNKNOWN");
+				string sql = ctx.GetCommand(query).CommandText;
+
+				StringAssert.Contains("OPTION (OPTIMIZE FOR UNKNOWN)", sql);
+				CollectionAssert.IsNotEmpty(query.ToList());
 			}
 		}
 

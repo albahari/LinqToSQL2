@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 #if NET6_0_OR_GREATER
@@ -28,7 +30,7 @@ namespace System.Data.Linq
 			if (source == null)
 				throw Error.ArgumentNull("source");
 
-			if (sqlQueryHints == null || sqlQueryHints.Length == 0 || source is ITable)   // Not supported directly on tables
+			if (sqlQueryHints == null || sqlQueryHints.Length == 0)
 				return source;
 
 			return source.Provider.CreateQuery<TSource>(
@@ -63,6 +65,33 @@ namespace System.Data.Linq
 					GetMethodInfo(TagWith, source, tag),
 					new Expression[] { source.Expression, Expression.Constant(tag) }
 					));
+		}
+
+		/// <summary>
+		/// Annotates the query with a tag identifying the source file and line number from which it was called,
+		/// emitted as a leading SQL comment. This makes the query easy to trace back to your code in SQL Profiler,
+		/// Query Store and other database tooling. Note that this embeds the absolute source file path (as it was
+		/// at compile time) into the query text.
+		/// </summary>
+		public static IQueryable<TSource> TagWithCallSite<TSource> (this IQueryable<TSource> source,
+			[CallerFilePath] string filePath = null, [CallerMemberName] string memberName = null, [CallerLineNumber] int lineNumber = 0)
+		{
+			if (source == null)
+				throw Error.ArgumentNull("source");
+
+			if (string.IsNullOrWhiteSpace(filePath))
+				return source;
+
+			string s = "File: " + 
+				(filePath.EndsWith(Path.DirectorySeparatorChar + "LINQPadQuery", StringComparison.OrdinalIgnoreCase) ? "Script" : filePath);
+			
+			if (!string.IsNullOrEmpty(memberName))
+				s += ":" + memberName;
+
+			if (lineNumber > 0)
+				s += ":" + lineNumber;
+
+            return TagWith(source, s);
 		}
 
 		// --- Set-based DML (ExecuteDelete / ExecuteUpdate) ---
