@@ -226,7 +226,7 @@ namespace System.Data.Linq.Provider.Visitors
 					{
 						if(exprs[i] == null || exprs[i].NodeType != SqlNodeType.New)
 							throw Error.UnionIncompatibleConstruction();
-						cobs[i] = (SqlNew)exprs[1];
+						cobs[i] = (SqlNew)exprs[i];
 						if(cobs[i].Members.Count != cobs[0].Members.Count)
 							throw Error.UnionDifferentMembers();
 						for(int m = 0, mn = cobs[0].Members.Count; m < mn; m++)
