@@ -1348,11 +1348,14 @@ namespace System.Data.Linq.Provider.Visitors
 
 				// walk down join tree looking for best location for join
 				SqlJoin join = (SqlJoin)location;
-				if (this.IsOuterDependent(isOuterDependent, @join.Left, consumed, out produced))
+				// a full outer join null-extends *both* of its operands, so navigations hanging off either
+				// side must be outer joins too, not just those off the right of a left/outer-apply join.
+				bool isFullOuter = @join.JoinType == SqlJoinType.FullOuter;
+				if (this.IsOuterDependent(isOuterDependent || isFullOuter, @join.Left, consumed, out produced))
 					return true;
 
 				HashSet<SqlAlias> rightProduced;
-				bool rightIsOuterDependent = @join.JoinType == SqlJoinType.LeftOuter || @join.JoinType == SqlJoinType.OuterApply;
+				bool rightIsOuterDependent = isFullOuter || @join.JoinType == SqlJoinType.LeftOuter || @join.JoinType == SqlJoinType.OuterApply;
 				if (this.IsOuterDependent(rightIsOuterDependent, @join.Right, consumed, out rightProduced))
 					return true;
 				produced.UnionWith(rightProduced);

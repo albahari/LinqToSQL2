@@ -191,6 +191,46 @@ namespace ReadWriteTests.SqlServer
 
 
 		[Test]
+		public void LeftJoinOverGroupedSourcesGeneratesLeftOuterJoinSql()
+		{
+			using(var ctx = GetContext())
+			{
+				// grouped/aggregated sources cannot be reduced from the APPLY construct by SqlOuterApplyReducer,
+				// so this verifies that the join is built directly as a LEFT OUTER JOIN.
+				var salesA = ctx.SalesOrderDetails.Where(d => d.SalesOrderId < 44000)
+								.GroupBy(d => d.ProductId)
+								.Select(g => new { ProductID = (int?)g.Key, Revenue = (decimal?)g.Sum(x => x.LineTotal) });
+				var salesB = ctx.SalesOrderDetails.Where(d => d.SalesOrderId >= 44000)
+								.GroupBy(d => d.ProductId)
+								.Select(g => new { ProductID = (int?)g.Key, Revenue = (decimal?)g.Sum(x => x.LineTotal) });
+
+				var query = salesA.LeftJoin(salesB,
+								a => a.ProductID,
+								b => b.ProductID,
+								(a, b) => new { a.ProductID, RevA = a.Revenue, RevB = b.Revenue });
+
+				string commandText = ctx.GetCommand(query).CommandText;
+				StringAssert.Contains("LEFT OUTER JOIN", commandText, "Expected a directly constructed LEFT OUTER JOIN");
+				StringAssert.DoesNotContain("APPLY", commandText, "Grouped sources must be joined directly rather than via APPLY");
+
+				var actual = query.ToList()
+								.OrderBy(x => x.ProductID).ThenBy(x => x.RevB).ToList();
+
+				var listA = salesA.ToList();
+				var listB = salesB.ToList();
+				var expected = listA.LeftJoin(listB,
+								a => a.ProductID,
+								b => b.ProductID,
+								(a, b) => new { a.ProductID, RevA = a.Revenue, RevB = b == null ? (decimal?)null : b.Revenue })
+								.OrderBy(x => x.ProductID).ThenBy(x => x.RevB).ToList();
+
+				CollectionAssert.IsNotEmpty(actual);
+				CollectionAssert.AreEqual(expected, actual);
+			}
+		}
+
+
+		[Test]
 		public void RightJoinGeneratesLeftOuterJoinSql()
 		{
 			using(var ctx = GetContext())

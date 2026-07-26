@@ -285,6 +285,7 @@ namespace System.Data.Linq
 		Cross,
 		Inner,
 		LeftOuter,
+		FullOuter,
 		CrossApply,
 		OuterApply
 	}

@@ -1022,6 +1022,9 @@ namespace System.Data.Linq.DbEngines.SqlServer
 				case SqlJoinType.LeftOuter:
 					_commandStringBuilder.Append("LEFT OUTER JOIN ");
 					break;
+				case SqlJoinType.FullOuter:
+					_commandStringBuilder.Append("FULL OUTER JOIN ");
+					break;
 				case SqlJoinType.OuterApply:
 					_commandStringBuilder.Append("OUTER APPLY ");
 					break;
@@ -1061,6 +1064,7 @@ namespace System.Data.Linq.DbEngines.SqlServer
 					return false;
 				case SqlJoinType.Inner:
 				case SqlJoinType.LeftOuter:
+				case SqlJoinType.FullOuter:
 					return true;
 				default:
 					throw Error.InvalidFormatNode(joinType);

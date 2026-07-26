@@ -622,44 +622,97 @@ Expression.ArrayIndex(pa, Expression.Constant(i)),
 		/// <summary>
 		/// Converts the LeftJoin operator (.NET 10) and, with the sides swapped by the caller, the RightJoin operator:
 		/// every row of the outer sequence is preserved, and the inner side yields null for unmatched outer rows.
-		/// Converted as outer CROSS APPLY (matching inner rows, or a single null row) - the same shape the classic
-		/// GroupJoin/SelectMany/DefaultIfEmpty pattern produces - which the SqlOuterApplyReducer subsequently
-		/// collapses into a LEFT OUTER JOIN.
+		/// Converted directly as a LEFT OUTER JOIN with the key equality as the join condition, the inner side
+		/// wrapped in the optional-value (test column) construct so that it materializes as null for unmatched
+		/// rows. Building the join directly - rather than via the CROSS APPLY / DefaultIfEmpty shape the classic
+		/// GroupJoin pattern produces - keeps the translation a proper join even when the sources are grouped,
+		/// aggregated or otherwise irreducible by SqlOuterApplyReducer.
 		/// </summary>
 		/// <param name="preservedParameterIndex">Index of the result selector parameter bound to the preserved (outer)
 		/// side: 0 for LeftJoin, 1 for RightJoin (where the caller passes the sequences and key selectors swapped).</param>
 		private SqlSelect VisitLeftJoin(Expression outerSequence, Expression innerSequence, LambdaExpression outerKeySelector, LambdaExpression innerKeySelector, LambdaExpression resultSelector, int preservedParameterIndex)
 		{
 			SqlSelect outerSelect = this.VisitSequence(outerSequence);
-			SqlSelect innerSelect = this.VisitSequence(innerSequence);
-
 			SqlAlias outerAlias = new SqlAlias(outerSelect);
 			SqlAliasRef outerRef = new SqlAliasRef(outerAlias);
-			SqlAlias innerAlias = new SqlAlias(innerSelect);
-			SqlAliasRef innerRef = new SqlAliasRef(innerAlias);
+
+			SqlSelect defaulted = this.WrapWithOptionalTest(this.VisitSequence(innerSequence));
+			SqlAlias defaultedAlias = new SqlAlias(defaulted);
+			SqlAliasRef defaultedRef = new SqlAliasRef(defaultedAlias);
 
 			_parameterExpressionToSqlExpression[outerKeySelector.Parameters[0]] = outerRef;
 			SqlExpression outerKey = this.VisitExpression(outerKeySelector.Body);
 
-			_parameterExpressionToSqlExpression[innerKeySelector.Parameters[0]] = innerRef;
+			// the inner key is computed through the wrapped select, so that the join condition references
+			// columns the wrapped select exposes (the binder columnizes the accessed members into its row).
+			_parameterExpressionToSqlExpression[innerKeySelector.Parameters[0]] = defaultedRef;
 			SqlExpression innerKey = this.VisitExpression(innerKeySelector.Body);
 
-			// the inner rows matching the current outer row, as in VisitGroupJoin...
-			SqlSelect matching = new SqlSelect(innerRef, innerAlias, _dominatingExpression);
-			matching.Where = _nodeFactory.Binary(SqlNodeType.EQ, outerKey, innerKey);
-
-			// ...defaulting to a single null row when there are no matches.
-			SqlSelect defaulted = this.WrapWithDefaultIfEmpty(matching);
-			SqlAlias defaultedAlias = new SqlAlias(defaulted);
-			SqlAliasRef defaultedRef = new SqlAliasRef(defaultedAlias);
-
-			SqlJoin join = new SqlJoin(SqlJoinType.CrossApply, outerAlias, defaultedAlias, null, _dominatingExpression);
+			SqlExpression condition = _nodeFactory.Binary(SqlNodeType.EQ, outerKey, innerKey);
+			SqlJoin join = new SqlJoin(SqlJoinType.LeftOuter, outerAlias, defaultedAlias, condition, _dominatingExpression);
 
 			_parameterExpressionToSqlExpression[resultSelector.Parameters[preservedParameterIndex]] = outerRef;
 			_parameterExpressionToSqlExpression[resultSelector.Parameters[1 - preservedParameterIndex]] = defaultedRef;
 			SqlExpression result = this.VisitExpression(resultSelector.Body);
 
 			return new SqlSelect(result, join, _dominatingExpression);
+		}
+
+		/// <summary>
+		/// Converts the FullJoin operator (.NET 11): every row of both sequences is preserved, and the missing
+		/// side yields null for unmatched rows. Converted directly as a native FULL OUTER JOIN with the key
+		/// equality as the join condition, built exactly as in VisitLeftJoin except that both sides are wrapped
+		/// in the optional-value (test column) construct - under a full join either side can be null-extended,
+		/// so each side needs its own test column to tell the materializer to produce a null object.
+		/// </summary>
+		private SqlSelect VisitFullJoin(Expression outerSequence, Expression innerSequence, LambdaExpression outerKeySelector, LambdaExpression innerKeySelector, LambdaExpression resultSelector)
+		{
+			SqlSelect outerSelect = this.WrapWithOptionalTest(this.VisitSequence(outerSequence));
+			SqlAlias outerAlias = new SqlAlias(outerSelect);
+			SqlAliasRef outerRef = new SqlAliasRef(outerAlias);
+
+			SqlSelect innerSelect = this.WrapWithOptionalTest(this.VisitSequence(innerSequence));
+			SqlAlias innerAlias = new SqlAlias(innerSelect);
+			SqlAliasRef innerRef = new SqlAliasRef(innerAlias);
+
+			// both keys are computed through the wrapped selects, so that the join condition references
+			// columns the wrapped selects expose (the binder columnizes the accessed members into their rows).
+			_parameterExpressionToSqlExpression[outerKeySelector.Parameters[0]] = outerRef;
+			SqlExpression outerKey = this.VisitExpression(outerKeySelector.Body);
+
+			_parameterExpressionToSqlExpression[innerKeySelector.Parameters[0]] = innerRef;
+			SqlExpression innerKey = this.VisitExpression(innerKeySelector.Body);
+
+			SqlExpression condition = _nodeFactory.Binary(SqlNodeType.EQ, outerKey, innerKey);
+			SqlJoin join = new SqlJoin(SqlJoinType.FullOuter, outerAlias, innerAlias, condition, _dominatingExpression);
+
+			_parameterExpressionToSqlExpression[resultSelector.Parameters[0]] = outerRef;
+			_parameterExpressionToSqlExpression[resultSelector.Parameters[1]] = innerRef;
+			SqlExpression result = this.VisitExpression(resultSelector.Body);
+
+			return new SqlSelect(result, join, _dominatingExpression);
+		}
+
+		/// <summary>
+		/// Wraps the given select so that its projection is the optional-value construct: an always-1 test
+		/// column alongside the original row. When the wrapped select sits on the null-supplying side of an
+		/// outer join, the test column reads null for null-extended rows, which the materializer uses to
+		/// produce a null object - the same construct WrapWithDefaultIfEmpty builds around its inner select.
+		/// </summary>
+		private SqlSelect WrapWithOptionalTest(SqlSelect select)
+		{
+			SqlAlias alias = new SqlAlias(select);
+			SqlAliasRef aliasRef = new SqlAliasRef(alias);
+			SqlExpression opt = new SqlOptionalValue(
+				new SqlColumn(
+					"test",
+					_nodeFactory.Unary(SqlNodeType.OuterJoinedValue,
+						_nodeFactory.Value(typeof(int?), _typeProvider.From(typeof(int)), 1, false, _dominatingExpression)
+						)
+					),
+					_nodeFactory.Unary(SqlNodeType.OuterJoinedValue, aliasRef)
+				);
+			return new SqlSelect(opt, alias, _dominatingExpression);
 		}
 
 		private SqlSelect VisitDefaultIfEmpty(Expression sequence)
@@ -2799,6 +2852,21 @@ Expression.ArrayIndex(cpArray.Accessor.Body, Expression.Constant(vIndex.Value, v
 						{
 							// RightJoin preserves the inner sequence: convert it as a LeftJoin with the sides swapped.
 							return this.VisitLeftJoin(mc.Arguments[1], mc.Arguments[0], this.GetLambda(mc.Arguments[3]), this.GetLambda(mc.Arguments[2]), this.GetLambda(mc.Arguments[4]), preservedParameterIndex: 1);
+						}
+						break;
+					case "FullJoin":
+						isSupportedSequenceOperator = true;
+						// FullJoin (.NET 11) has a single result-selector overload with an optional trailing
+						// IEqualityComparer, so the compiler always supplies six arguments; only the default
+						// (null) comparer is translatable. The tuple-returning overload (five arguments, no
+						// result selector) is not supported.
+						if(mc.Arguments.Count == 6 &&
+							this.IsLambda(mc.Arguments[2]) && this.GetLambda(mc.Arguments[2]).Parameters.Count == 1 &&
+							this.IsLambda(mc.Arguments[3]) && this.GetLambda(mc.Arguments[3]).Parameters.Count == 1 &&
+							this.IsLambda(mc.Arguments[4]) && this.GetLambda(mc.Arguments[4]).Parameters.Count == 2 &&
+							mc.Arguments[5] is ConstantExpression fullJoinComparer && fullJoinComparer.Value == null)
+						{
+							return this.VisitFullJoin(mc.Arguments[0], mc.Arguments[1], this.GetLambda(mc.Arguments[2]), this.GetLambda(mc.Arguments[3]), this.GetLambda(mc.Arguments[4]));
 						}
 						break;
 					case "GroupJoin":

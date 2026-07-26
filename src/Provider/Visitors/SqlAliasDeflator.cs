@@ -75,6 +75,7 @@ namespace System.Data.Linq.Provider.Visitors
 			{
 				case SqlJoinType.Cross:
 				case SqlJoinType.Inner:
+				case SqlJoinType.FullOuter:
 					// reducing either side would effect cardinality of results
 					break;
 				case SqlJoinType.LeftOuter:
